@@ -408,6 +408,15 @@ function formatDateDDMMYYYY(date) {
   return `${day}/${month}/${year}`;
 }
 
+function formatDateISO(date) {
+  const parsed = parseSheetDate(date) || (date instanceof Date ? new Date(date.getTime()) : null);
+  if (!parsed || isNaN(parsed)) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // ============================================================================
 // API: INICIALIZAÇÃO
 // ============================================================================
@@ -1867,6 +1876,7 @@ function apiMakeReviewToday() {
     hoje.setHours(0, 0, 0, 0);
 
     const gather = gatherReviewCandidates(settings, hoje);
+    const hojeISO = formatDateISO(hoje);
     const spacedSheet = gather.spacedSheet;
     const reviewSheet = gather.reviewSheet;
 
@@ -1964,6 +1974,7 @@ function apiMakeReviewToday() {
       });
     }
 
+    // Reconstrução da aba REVER_HOJE a partir dos alvos priorizados de SPACED.
     clearSheetData(SHEET_NAMES.REVER_HOJE);
     const rowsToWrite = finalList.map(item => [
       item.alvo,
@@ -1984,17 +1995,25 @@ function apiMakeReviewToday() {
       appendPolicyLogEntries(policyEntries);
     }
 
+    const caps = {
+      Smin: isFinite(settings.Smin) ? Number(settings.Smin) : DEFAULT_SETTINGS.Smin,
+      Smax: isFinite(settings.Smax) ? Number(settings.Smax) : DEFAULT_SETTINGS.Smax,
+      Imin: isFinite(settings.Imin) ? Number(settings.Imin) : DEFAULT_SETTINGS.Imin,
+      Imax: isFinite(settings.Imax) ? Number(settings.Imax) : DEFAULT_SETTINGS.Imax
+    };
+
+    // Fórmula base: prioridade ≈ (1 − R(t)) + overdue + custos, com ajustes quando o modo avançado está ativo.
     const responseList = finalList.map(item => {
       const components = item.components || {};
       const diag = item.modelRow ? {
         sigma: item.modelRow.sigma,
         n_eff: item.modelRow.n_eff
       } : null;
-      const context = item.context || null;
-      const alvoParts = context && (context.area || context.subarea)
+      const context = item.context || {};
+      const alvoParts = (context.area || context.subarea)
         ? { area: context.area, subarea: context.subarea }
         : parseAlvoParts(item.alvo || '');
-      const tempoPrevSeg = context && context.tempoPrevSeg !== undefined
+      const tempoPrevSeg = context.tempoPrevSeg !== undefined
         ? context.tempoPrevSeg
         : (components.costMinutes !== undefined && components.costMinutes !== null
           ? components.costMinutes * 60
@@ -2002,6 +2021,22 @@ function apiMakeReviewToday() {
       const tempoPrevMin = tempoPrevSeg !== null && tempoPrevSeg !== undefined
         ? tempoPrevSeg / 60
         : (components.costMinutes !== undefined ? components.costMinutes : null);
+
+      const estabilidadeCtx = context.S !== undefined ? Number(context.S) : Number(item.estabilidade);
+      const baseRecall = context.baseRecall !== undefined ? Number(context.baseRecall) : null;
+      const recallHoje = baseRecall !== null && baseRecall !== undefined ? clamp(1 - baseRecall, 0, 1) : null;
+      let overdueValue = components.overdue !== undefined ? Number(components.overdue) : null;
+      if (overdueValue === null || isNaN(overdueValue)) {
+        if (context.overdueValue !== undefined) {
+          overdueValue = Number(context.overdueValue);
+        } else if (context.overdueRaw !== undefined) {
+          overdueValue = Number(context.overdueRaw);
+        }
+      }
+      const tempoEstimado = tempoPrevMin !== null && tempoPrevMin !== undefined
+        ? Number(tempoPrevMin)
+        : (components.costMinutes !== undefined ? Number(components.costMinutes) : null);
+
       return {
         alvo: item.alvo,
         prioridade: item.prioridade,
@@ -2012,21 +2047,30 @@ function apiMakeReviewToday() {
         eviPerMinMean: components.eviPerMinMean !== undefined ? components.eviPerMinMean : null,
         eviTotal: components.eviTotalLCB !== undefined ? components.eviTotalLCB : null,
         custos: components.custos !== undefined ? components.custos : null,
-        overdue: components.overdue !== undefined ? components.overdue : null,
+        overdue: isFinite(overdueValue) ? overdueValue : null,
         diversity: components.diversity !== undefined ? components.diversity : null,
         costMinutes: components.costMinutes !== undefined ? components.costMinutes : null,
         diagnostics: diag,
-        atrasoDias: context && context.atrasoDias !== undefined ? context.atrasoDias : null,
+        atrasoDias: context.atrasoDias !== undefined ? context.atrasoDias : null,
         tempoPrevMin: tempoPrevMin,
-        baseRecall: context && context.baseRecall !== undefined ? context.baseRecall : null,
+        baseRecall: baseRecall,
         area: alvoParts.area || '',
-        subarea: alvoParts.subarea || ''
+        subarea: alvoParts.subarea || '',
+        S: isFinite(estabilidadeCtx) ? estabilidadeCtx : null,
+        Rhoje: recallHoje !== null && recallHoje !== undefined ? recallHoje : null,
+        tempoEstMin: tempoEstimado !== null && isFinite(tempoEstimado) ? tempoEstimado : null,
+        peg: context.peg !== undefined ? context.peg : null,
+        tempo_rel: context.tempoRel !== undefined ? context.tempoRel : null,
+        dif_norm: context.difNorm !== undefined ? context.difNorm : null,
+        caps: caps
       };
     });
 
     return {
       ok: true,
+      date: hojeISO,
       count: finalList.length,
+      items: responseList,
       data: responseList,
       policyVersion,
       bandit: banditResult ? { budget: banditResult.budget, totalCost: banditResult.totalCost } : null
@@ -4151,9 +4195,102 @@ function apiGetDayDetails(dateISO) {
   }
 }
 
-function apiApplyReviewDone(alvos) {
+function setReviewHojeStatus(alvo, feito) {
+  if (!alvo) return false;
+  const sheet = getOrCreateSheet(SHEET_NAMES.REVER_HOJE, HEADERS.REVER_HOJE);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return false;
+
+  const alvoIdx = HEADERS.REVER_HOJE.indexOf('alvo');
+  const feitoIdx = HEADERS.REVER_HOJE.indexOf('feito');
+  if (alvoIdx < 0 || feitoIdx < 0) return false;
+
+  const range = sheet.getRange(2, 1, lastRow - 1, HEADERS.REVER_HOJE.length);
+  const values = range.getValues();
+  let updated = false;
+
+  for (let i = 0; i < values.length; i++) {
+    const rowAlvo = values[i][alvoIdx];
+    if (rowAlvo && rowAlvo.toString().trim() === alvo) {
+      // Marca ou desmarca o alvo como concluído diretamente em REVER_HOJE.
+      values[i][feitoIdx] = feito ? 'TRUE' : '';
+      updated = true;
+    }
+  }
+
+  if (updated) {
+    range.setValues(values);
+  }
+
+  return updated;
+}
+
+function apiApplyReviewDone(payload) {
   try {
-    return { ok: true };
+    if (!payload || !payload.alvo) {
+      return { ok: false, error: 'Alvo obrigatório.' };
+    }
+
+    const alvo = payload.alvo.toString().trim();
+    if (!alvo) {
+      return { ok: false, error: 'Alvo inválido.' };
+    }
+
+    if (payload.undo === true) {
+      const undone = setReviewHojeStatus(alvo, false);
+      SpreadsheetApp.flush();
+      return { ok: true, alvo, undone: true, recomputeHint: true, updated: undone };
+    }
+
+    const total = Number(payload.total);
+    const acertos = Number(payload.acertos);
+    if (!isFinite(total) || total <= 0) {
+      return { ok: false, error: 'Total de questões inválido.' };
+    }
+    if (!isFinite(acertos) || acertos < 0 || acertos > total) {
+      return { ok: false, error: 'Quantidade de acertos inválida.' };
+    }
+
+    const tempoSegRaw = payload.tempoSeg !== undefined ? Number(payload.tempoSeg) : 0;
+    const tempoSeg = isFinite(tempoSegRaw) && tempoSegRaw >= 0 ? tempoSegRaw : 0;
+    let difPercebida = payload.difPercebida !== undefined ? Number(payload.difPercebida) : 3;
+    if (!isFinite(difPercebida)) difPercebida = 3;
+    difPercebida = clamp(Math.round(difPercebida), 1, 5);
+
+    let area = (payload.area || '').toString().trim();
+    let subarea = (payload.subarea || '').toString().trim();
+    if (!area || !subarea) {
+      const parts = parseAlvoParts(alvo);
+      if (!area) area = parts.area;
+      if (!subarea) subarea = parts.subarea;
+    }
+
+    const reviewPayload = {
+      alvo,
+      area,
+      subarea,
+      total,
+      acertos,
+      tempoSeg,
+      difPercebida,
+      flags: payload.flags || '',
+      obs: payload.obs || '',
+      metaOverride: payload.metaOverride,
+      p_prev: payload.p_prev,
+      tDias: payload.tDias
+    };
+
+    const logResult = apiLogReviewOutcome(reviewPayload);
+    if (!logResult || !logResult.ok) {
+      return {
+        ok: false,
+        error: logResult && logResult.error ? logResult.error : 'Erro ao registrar revisão.'
+      };
+    }
+
+    const marked = setReviewHojeStatus(alvo, true);
+    SpreadsheetApp.flush();
+    return { ok: true, alvo, recomputeHint: true, marked };
   } catch (e) {
     return { ok: false, error: e.toString() };
   }
