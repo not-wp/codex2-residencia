@@ -1668,6 +1668,7 @@ function gatherReviewCandidates(settings, referenceDate) {
   });
 
   const reviewList = [];
+  const upcomingList = [];
   const priorityUpdates = [];
   const priorityByAlvo = {};
 
@@ -1701,35 +1702,43 @@ function gatherReviewCandidates(settings, referenceDate) {
     }
 
     proxima.setHours(0, 0, 0, 0);
+    const diasAte = Math.floor((proxima.getTime() - hoje.getTime()) / (24 * 60 * 60 * 1000));
+    const dentroDoHorizon = isFinite(diasAte) && diasAte <= horizonDays && diasAte >= 0;
     const areaKey = priorityInfo.context && priorityInfo.context.area
       ? priorityInfo.context.area
       : areaKeyRaw;
+    const entry = {
+      alvo: item.alvo,
+      prioridade: prioridade,
+      prioridadeBase: prioridade,
+      proximaRevisao: proxima,
+      estabilidade: parseFloat(item.estabilidade) || settings.Smin,
+      components: priorityInfo.components || {},
+      context: priorityInfo.context || null,
+      feito: feitoMap[item.alvo] || '',
+      modelRow: extras.modelRow || null,
+      areaKey,
+      diasAte: isFinite(diasAte) ? diasAte : null
+    };
+
     if (proxima <= hoje) {
-      reviewList.push({
-        alvo: item.alvo,
-        prioridade: prioridade,
-        prioridadeBase: prioridade,
-        proximaRevisao: proxima,
-        estabilidade: parseFloat(item.estabilidade) || settings.Smin,
-        components: priorityInfo.components || {},
-        context: priorityInfo.context || null,
-        feito: feitoMap[item.alvo] || '',
-        modelRow: extras.modelRow || null,
-        areaKey
-      });
+      reviewList.push(entry);
+    } else if (dentroDoHorizon) {
+      upcomingList.push(entry);
     }
   });
 
-  if (useAdvanced && asBoolean(settings.useDiversityReg) && reviewList.length > 0) {
+  const diversityTargets = reviewList.concat(upcomingList);
+  if (useAdvanced && asBoolean(settings.useDiversityReg) && diversityTargets.length > 0) {
     const lambdaDiv = parseFloat(settings.lambdaDiversity);
     const diversityWeight = isFinite(lambdaDiv) ? lambdaDiv : DEFAULT_SETTINGS.lambdaDiversity;
     if (diversityWeight !== 0) {
       const areaCounts = {};
-      reviewList.forEach(item => {
+      diversityTargets.forEach(item => {
         const key = item.areaKey || 'Sem área';
         areaCounts[key] = (areaCounts[key] || 0) + 1;
       });
-      const totalItems = reviewList.length;
+      const totalItems = diversityTargets.length;
       const coverageReal = {};
       Object.keys(areaCounts).forEach(area => {
         coverageReal[area] = areaCounts[area] / totalItems;
@@ -1746,7 +1755,7 @@ function gatherReviewCandidates(settings, referenceDate) {
         }
       });
 
-      const uniqueAreas = Array.from(new Set(reviewList.map(item => item.areaKey || 'Sem área')));
+      const uniqueAreas = Array.from(new Set(diversityTargets.map(item => item.areaKey || 'Sem área')));
       const targetShares = {};
       if (totalPeso > 0) {
         Object.keys(targetsRaw).forEach(area => {
@@ -1766,7 +1775,7 @@ function gatherReviewCandidates(settings, referenceDate) {
         });
       }
 
-      reviewList.forEach(item => {
+      diversityTargets.forEach(item => {
         const area = item.areaKey || 'Sem área';
         const target = targetShares.hasOwnProperty(area)
           ? targetShares[area]
@@ -1791,12 +1800,19 @@ function gatherReviewCandidates(settings, referenceDate) {
   }
 
   reviewList.sort((a, b) => (b.prioridade || 0) - (a.prioridade || 0));
+  upcomingList.sort((a, b) => {
+    const dueA = a.proximaRevisao instanceof Date ? a.proximaRevisao.getTime() : Number.MAX_SAFE_INTEGER;
+    const dueB = b.proximaRevisao instanceof Date ? b.proximaRevisao.getTime() : Number.MAX_SAFE_INTEGER;
+    if (dueA !== dueB) return dueA - dueB;
+    return (b.prioridade || 0) - (a.prioridade || 0);
+  });
 
   return {
     spacedSheet,
     reviewSheet,
     spacedData,
     reviewList,
+    upcomingList,
     priorityUpdates,
     priorityByAlvo,
     feitoMap,
@@ -3894,7 +3910,9 @@ function apiWeeklyPlan(params) {
     hoje.setHours(0, 0, 0, 0);
 
     const gather = gatherReviewCandidates(planningSettings, hoje);
-    const reviewList = gather.reviewList || [];
+    const todayList = gather.reviewList || [];
+    const upcomingList = gather.upcomingList || [];
+    const reviewList = todayList.concat(upcomingList);
     const statsData = readSheetData(SHEET_NAMES.STATS);
     const statsMap = {};
     statsData.forEach(row => {
