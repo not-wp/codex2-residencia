@@ -921,24 +921,28 @@ function apiGetStats() {
 function apiChartData() {
   try {
     const stats = readSheetData(SHEET_NAMES.STATS);
-    
-    // Agrupar por área
-    const areaMap = {};
+
+    // Agrupar por área e calcular participação relativa do volume estudado.
+    const areaTotals = {};
+    let totalQuestoes = 0;
     stats.forEach(row => {
+      if (!row) return;
       const area = row.area || 'Sem área';
-      if (!areaMap[area]) {
-        areaMap[area] = { total: 0, acertos: 0 };
+      const questoes = parseFloat(row.questoes);
+      const safeQuestoes = isFinite(questoes) && questoes > 0 ? questoes : 0;
+      if (!areaTotals[area]) {
+        areaTotals[area] = 0;
       }
-      areaMap[area].total += parseFloat(row.questoes) || 0;
-      areaMap[area].acertos += parseFloat(row.acertos) || 0;
+      areaTotals[area] += safeQuestoes;
+      totalQuestoes += safeQuestoes;
     });
-    
-    const chartData = [['Área', 'Acerto %']];
-    Object.keys(areaMap).forEach(area => {
-      const pct = areaMap[area].total > 0 ? (areaMap[area].acertos / areaMap[area].total) * 100 : 0;
-      chartData.push([area, pct]);
+
+    const chartData = [['Área', 'Cobertura %']];
+    Object.keys(areaTotals).forEach(area => {
+      const share = totalQuestoes > 0 ? (areaTotals[area] / totalQuestoes) * 100 : 0;
+      chartData.push([area, share]);
     });
-    
+
     return { ok: true, data: chartData };
   } catch (e) {
     return { ok: false, error: e.toString() };
@@ -3956,11 +3960,23 @@ function apiWeeklyPlan(params) {
       const currentDate = new Date(hoje.getTime() + offset * msPerDay);
       const available = candidates.filter(item => !item._assigned && (item.dueDate === null || item.dueDate <= currentDate));
       let selection = available.slice();
-      if (selection.length === 0) {
-        const remaining = candidates.filter(item => !item._assigned);
-        selection = remaining.slice(0, maxTargets);
-      } else if (selection.length > maxTargets) {
+      if (selection.length > maxTargets) {
         selection = selection.slice(0, maxTargets);
+      }
+
+      if (selection.length === 0) {
+        // Mantém o planejamento sincronizado com o calendário: se não há itens vencidos
+        // ou agendados para este dia, registramos o dia vazio em vez de antecipar alvos futuros.
+        days.push({
+          dateISO: currentDate.toISOString(),
+          date: formatDateDDMMYYYY(currentDate),
+          allocatedMin: 0,
+          totalDeltaRpp: 0,
+          targets: [],
+          areas: [],
+          fallbackToPriority: false
+        });
+        continue;
       }
 
       const planInputs = selection.map(item => Object.assign({}, item));
