@@ -1174,6 +1174,81 @@
       border-radius: 10px;
     }
 
+    .dashboard-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .dashboard-filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 160px;
+    }
+
+    .dashboard-filter-group label {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .dashboard-filter-group select {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      padding: 8px 10px;
+      font-size: 0.95rem;
+    }
+
+    .dashboard-chart-grid {
+      display: grid;
+      gap: 20px;
+    }
+
+    @media (min-width: 1024px) {
+      .dashboard-chart-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .chart-card {
+      background: rgba(15, 23, 42, 0.45);
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 280px;
+    }
+
+    .chart-card h3 {
+      margin: 0;
+      font-size: 1.05rem;
+      color: var(--accent);
+    }
+
+    .chart-card small {
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+    }
+
+    .chart-block {
+      flex: 1;
+      position: relative;
+    }
+
+    .chart-block > div {
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-block .chart-placeholder {
+      height: 100%;
+    }
+
     .planner-panel {
       background: rgba(15, 23, 42, 0.6);
       border: 1px solid rgba(148, 163, 184, 0.28);
@@ -1950,11 +2025,6 @@
       }
     }
 
-    /* Chart Container */
-    #chartContainer {
-      min-height: 400px;
-      margin-top: 20px;
-    }
   </style>
 </head>
 <body>
@@ -1998,9 +2068,59 @@
         </div>
       </div>
 
-      <div class="card">
-        <h2>Desempenho por Área</h2>
-        <div id="chartContainer"></div>
+      <div class="card" id="dashboardAnalytics">
+        <div class="card-header-inline" style="margin-bottom: 18px;">
+          <div>
+            <h2>Dashboard Analítico</h2>
+            <p class="helper-text">Combine filtros para entender seus acertos por área, subárea e ao longo do tempo.</p>
+          </div>
+        </div>
+        <div class="dashboard-controls">
+          <div class="dashboard-filter-group">
+            <label for="dashAreaFilter">Área</label>
+            <select id="dashAreaFilter">
+              <option value="ALL">Todas as áreas</option>
+            </select>
+          </div>
+          <div class="dashboard-filter-group">
+            <label for="dashWindow">Janela</label>
+            <select id="dashWindow">
+              <option value="7">7 dias</option>
+              <option value="14">14 dias</option>
+              <option value="28" selected>28 dias</option>
+              <option value="56">56 dias</option>
+            </select>
+          </div>
+          <div class="dashboard-filter-group">
+            <label for="dashAgg">Agregação</label>
+            <select id="dashAgg">
+              <option value="daily" selected>Diário</option>
+              <option value="weekly">Semanal</option>
+            </select>
+          </div>
+        </div>
+        <div class="dashboard-chart-grid">
+          <div class="chart-card">
+            <div>
+              <h3 id="chartBarsTitle">Acertos por Área</h3>
+              <small id="chartBarsSubtitle">Compare áreas ou subáreas conforme o filtro aplicado.</small>
+            </div>
+            <div class="chart-block">
+              <div id="chart_barras_area" style="display: none;"></div>
+              <div id="chartBarsPlaceholder" class="chart-placeholder">Carregando gráfico...</div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div>
+              <h3 id="chartLineTitle">Progressão Temporal</h3>
+              <small id="chartLineSubtitle">Acompanhe a evolução da taxa de acerto na janela selecionada.</small>
+            </div>
+            <div class="chart-block">
+              <div id="chart_linha_progresso" style="display: none;"></div>
+              <div id="chartLinePlaceholder" class="chart-placeholder">Carregando gráfico...</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -2822,6 +2942,14 @@
     let weeklyPlanData = null;
     let retrospectiveSnapshot = null;
     let modeComparisonResult = null;
+    let dashboardAreas = [];
+    let dashboardAreaMap = {};
+    let dashboardAreaSelection = 'ALL';
+    let dashboardWindowDays = 28;
+    let dashboardAggMode = 'daily';
+    let googleChartsReady = false;
+    let dashboardBarChart = null;
+    let dashboardLineChart = null;
 
     const alvoSuggestionSet = new Set();
     const areaSuggestionSet = new Set();
@@ -2845,6 +2973,17 @@
     const dayDetailsContentEl = document.getElementById('dayDetailsContent');
     const reviewModalOverlayEl = document.getElementById('reviewModalOverlay');
     const reviewModalEl = document.getElementById('reviewModal');
+    const dashAreaSelect = document.getElementById('dashAreaFilter');
+    const dashWindowSelect = document.getElementById('dashWindow');
+    const dashAggSelect = document.getElementById('dashAgg');
+
+    if (dashWindowSelect) {
+      dashboardWindowDays = Number(dashWindowSelect.value) || dashboardWindowDays;
+    }
+
+    if (dashAggSelect) {
+      dashboardAggMode = (dashAggSelect.value || 'daily');
+    }
 
     if (drawerOverlayEl) {
       drawerOverlayEl.addEventListener('click', closeDayDetails);
@@ -2860,6 +2999,27 @@
         fecharReviewModal();
       }
     });
+
+    if (dashAreaSelect) {
+      dashAreaSelect.addEventListener('change', function() {
+        dashboardAreaSelection = this.value || 'ALL';
+        atualizarGraficosDashboard();
+      });
+    }
+
+    if (dashWindowSelect) {
+      dashWindowSelect.addEventListener('change', function() {
+        dashboardWindowDays = Number(this.value) || 28;
+        atualizarGraficoLinhaDashboard();
+      });
+    }
+
+    if (dashAggSelect) {
+      dashAggSelect.addEventListener('change', function() {
+        dashboardAggMode = (this.value || 'daily');
+        atualizarGraficoLinhaDashboard();
+      });
+    }
 
     function toBool(value) {
       return value === true || value === 'true' || value === 1 || value === '1';
@@ -4364,8 +4524,9 @@
     // ========================================================================
     window.onload = function() {
       setLoading(true);
-      google.charts.load('current', {'packages':['corechart']});
+      google.charts.load('current', {'packages':['corechart','table']});
       google.charts.setOnLoadCallback(function() {
+        googleChartsReady = true;
         initApp();
       });
     };
@@ -4426,18 +4587,7 @@
         })
         .apiGetStats();
 
-      // Load chart
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result.ok && result.data.length > 1) {
-            drawChart(result.data);
-          } else {
-            document.getElementById('chartContainer').innerHTML = 
-              '<div class="empty-state"><p>Nenhum dado disponível para gráfico</p></div>';
-          }
-        })
-        .withFailureHandler(handleError)
-        .apiChartData();
+      fetchDashboardAreas();
 
       // Load calendar
       google.script.run
@@ -4471,30 +4621,281 @@
         .apiMakeReviewToday();
     }
 
-    function drawChart(data) {
-      const chartData = google.visualization.arrayToDataTable(data);
+    function fetchDashboardAreas() {
+      exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Carregando gráfico...');
+      exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Carregando gráfico...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.ok) {
+            dashboardAreas = Array.isArray(result.areas) ? result.areas : [];
+            dashboardAreaMap = result.map || {};
+          } else {
+            dashboardAreas = [];
+            dashboardAreaMap = {};
+            toast('Não foi possível carregar áreas para os filtros', 'warning');
+          }
+          populateDashboardAreaSelect();
+          atualizarGraficosDashboard();
+        })
+        .withFailureHandler(function(error) {
+          console.error('Erro ao carregar áreas do dashboard:', error);
+          toast('Erro ao carregar filtros de áreas', 'error');
+          dashboardAreas = [];
+          dashboardAreaMap = {};
+          populateDashboardAreaSelect();
+          atualizarGraficosDashboard();
+        })
+        .apiDashboardAreas();
+    }
+
+    function populateDashboardAreaSelect() {
+      if (!dashAreaSelect) return;
+      const previous = dashboardAreaSelection || 'ALL';
+      dashAreaSelect.innerHTML = '';
+
+      const optionAll = document.createElement('option');
+      optionAll.value = 'ALL';
+      optionAll.textContent = 'Todas as áreas';
+      dashAreaSelect.appendChild(optionAll);
+
+      dashboardAreas.forEach(area => {
+        const opt = document.createElement('option');
+        opt.value = area;
+        opt.textContent = area;
+        dashAreaSelect.appendChild(opt);
+      });
+
+      if (previous === 'ALL' || dashboardAreas.includes(previous)) {
+        dashAreaSelect.value = previous;
+        dashboardAreaSelection = previous;
+      } else {
+        dashAreaSelect.value = 'ALL';
+        dashboardAreaSelection = 'ALL';
+      }
+    }
+
+    function atualizarGraficosDashboard() {
+      atualizarGraficoBarrasDashboard();
+      atualizarGraficoLinhaDashboard();
+    }
+
+    function atualizarGraficoBarrasDashboard() {
+      const area = dashboardAreaSelection || 'ALL';
+      exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Carregando gráfico...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const titleEl = document.getElementById('chartBarsTitle');
+          const subtitleEl = document.getElementById('chartBarsSubtitle');
+          if (titleEl) titleEl.textContent = result && result.label ? result.label : 'Acertos por Área';
+          if (subtitleEl) {
+            subtitleEl.textContent = area === 'ALL'
+              ? 'Mostrando a taxa média de acertos por área.'
+              : `Mostrando subáreas da área ${area}.`;
+          }
+
+          if (result && result.ok && Array.isArray(result.data) && result.data.length) {
+            renderDashboardBarChart(result);
+          } else {
+            exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Sem dados disponíveis.');
+          }
+        })
+        .withFailureHandler(function(error) {
+          console.error('Erro ao carregar gráfico de barras:', error);
+          toast('Erro ao carregar gráfico de barras', 'error');
+          exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao carregar dados.');
+        })
+        .apiChartBars({ area });
+    }
+
+    function atualizarGraficoLinhaDashboard() {
+      const area = dashboardAreaSelection || 'ALL';
+      exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Carregando gráfico...');
+
+      google.script.run
+        .withSuccessHandler(function(result) {
+          const titleEl = document.getElementById('chartLineTitle');
+          const subtitleEl = document.getElementById('chartLineSubtitle');
+          if (titleEl) titleEl.textContent = result && result.label ? result.label : 'Progressão Temporal';
+          if (subtitleEl) {
+            const windowLabel = dashboardWindowDays + ' dias';
+            const aggLabel = dashboardAggMode === 'weekly' ? 'agregação semanal' : 'agregação diária';
+            subtitleEl.textContent = `Taxa de acerto (${windowLabel}, ${aggLabel}).`;
+          }
+
+          if (result && result.ok && Array.isArray(result.series) && result.series.length) {
+            renderDashboardLineChart(result);
+          } else {
+            exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Sem dados suficientes para o período.');
+          }
+        })
+        .withFailureHandler(function(error) {
+          console.error('Erro ao carregar gráfico de linha:', error);
+          toast('Erro ao carregar gráfico de linha', 'error');
+          exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao carregar dados.');
+        })
+        .apiChartLine({ area, windowDays: dashboardWindowDays, agg: dashboardAggMode });
+    }
+
+    function renderDashboardBarChart(result) {
+      const chartEl = document.getElementById('chart_barras_area');
+      if (!chartEl || !googleChartsReady || !google || !google.visualization || !google.visualization.ColumnChart) {
+        exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Google Charts não disponível.');
+        return;
+      }
+
+      const dataTable = new google.visualization.DataTable();
+      dataTable.addColumn('string', 'Área');
+      dataTable.addColumn('number', 'Taxa de acerto (%)');
+      dataTable.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
+
+      (result.data || []).forEach(item => {
+        const label = item.label || '—';
+        const acertos = Number(item.acertos) || 0;
+        const questoes = Number(item.questoes) || 0;
+        const taxaPct = Math.max(0, Math.min(100, (Number(item.taxa) || 0) * 100));
+        const tooltip = `
+          <div style="padding:6px 8px;">
+            <strong>${label}</strong><br>
+            Acertos ${acertos} / ${questoes} (${taxaPct.toFixed(1)}%)
+          </div>`;
+        dataTable.addRow([label, parseFloat(taxaPct.toFixed(2)), tooltip]);
+      });
+
       const options = {
-        title: 'Taxa de acertos por área',
-        backgroundColor: '#1e293b',
-        titleTextStyle: { color: '#f1f5f9', fontSize: 16 },
+        title: result.label || 'Acertos por Área',
+        backgroundColor: 'transparent',
+        titleTextStyle: { color: '#f1f5f9', fontSize: 15 },
         legend: { position: 'none' },
         hAxis: {
-          textStyle: { color: '#cbd5e1' },
-          titleTextStyle: { color: '#cbd5e1' }
+          textStyle: { color: '#cbd5e1' }
         },
         vAxis: {
-          title: 'Acertos (%)',
+          title: 'Taxa de acerto (%)',
           textStyle: { color: '#cbd5e1' },
           titleTextStyle: { color: '#cbd5e1' },
           minValue: 0,
-          maxValue: 100
+          maxValue: 100,
+          viewWindow: { min: 0, max: 100 }
         },
+        tooltip: { isHtml: true, textStyle: { color: '#0f172a' } },
         colors: ['#3b82f6'],
-        chartArea: { width: '80%', height: '70%' }
+        chartArea: { width: '78%', height: '68%' }
       };
 
-      const chart = new google.visualization.ColumnChart(document.getElementById('chartContainer'));
-      chart.draw(chartData, options);
+      mostrarGrafico('chart_barras_area', 'chartBarsPlaceholder');
+      if (!dashboardBarChart) {
+        dashboardBarChart = new google.visualization.ColumnChart(chartEl);
+      }
+      dashboardBarChart.draw(dataTable, options);
+    }
+
+    function renderDashboardLineChart(result) {
+      const chartEl = document.getElementById('chart_linha_progresso');
+      if (!chartEl || !googleChartsReady || !google || !google.visualization || !google.visualization.LineChart) {
+        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Google Charts não disponível.');
+        return;
+      }
+
+      const series = Array.isArray(result.series) ? result.series : [];
+      if (!series.length) {
+        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Sem dados suficientes para o período.');
+        return;
+      }
+
+      const dateKeys = new Set();
+      series.forEach(serie => {
+        (serie.points || []).forEach(point => {
+          if (point && point.date) {
+            dateKeys.add(point.date);
+          }
+        });
+      });
+
+      const sortedDates = Array.from(dateKeys).sort();
+      const dataTable = new google.visualization.DataTable();
+      dataTable.addColumn('date', 'Data');
+      series.forEach(serie => {
+        dataTable.addColumn('number', serie.name || 'Série');
+      });
+
+      const dateToRow = sortedDates.map(dateKey => {
+        const parts = dateKey.split('-').map(Number);
+        const dateObj = new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
+        dateObj.setHours(0, 0, 0, 0);
+        const row = [dateObj];
+        series.forEach(serie => {
+          const point = (serie.points || []).find(p => p.date === dateKey);
+          if (point && typeof point.taxa === 'number') {
+            const pct = Math.max(0, Math.min(100, point.taxa * 100));
+            row.push(parseFloat(pct.toFixed(2)));
+          } else {
+            row.push(null);
+          }
+        });
+        return row;
+      });
+
+      if (!dateToRow.length) {
+        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Sem dados suficientes para o período.');
+        return;
+      }
+
+      dataTable.addRows(dateToRow);
+
+      const options = {
+        backgroundColor: 'transparent',
+        title: result.label || 'Progressão Temporal',
+        titleTextStyle: { color: '#f1f5f9', fontSize: 15 },
+        legend: { position: 'top', textStyle: { color: '#cbd5e1' } },
+        hAxis: {
+          textStyle: { color: '#cbd5e1' },
+          format: 'dd/MM'
+        },
+        vAxis: {
+          title: 'Taxa de acerto (%)',
+          textStyle: { color: '#cbd5e1' },
+          titleTextStyle: { color: '#cbd5e1' },
+          minValue: 0,
+          maxValue: 100,
+          viewWindow: { min: 0, max: 100 }
+        },
+        curveType: 'function',
+        chartArea: { width: '78%', height: '68%' }
+      };
+
+      mostrarGrafico('chart_linha_progresso', 'chartLinePlaceholder');
+      if (!dashboardLineChart) {
+        dashboardLineChart = new google.visualization.LineChart(chartEl);
+      }
+      dashboardLineChart.draw(dataTable, options);
+    }
+
+    function exibirPlaceholderGrafico(chartId, placeholderId, message) {
+      const chartEl = document.getElementById(chartId);
+      const placeholderEl = document.getElementById(placeholderId);
+      if (chartEl) {
+        chartEl.style.display = 'none';
+        if (chartEl.innerHTML) {
+          chartEl.innerHTML = '';
+        }
+      }
+      if (placeholderEl) {
+        placeholderEl.style.display = 'flex';
+        placeholderEl.textContent = message || 'Sem dados.';
+      }
+    }
+
+    function mostrarGrafico(chartId, placeholderId) {
+      const chartEl = document.getElementById(chartId);
+      const placeholderEl = document.getElementById(placeholderId);
+      if (chartEl) {
+        chartEl.style.display = 'block';
+      }
+      if (placeholderEl) {
+        placeholderEl.style.display = 'none';
+      }
     }
 
     function renderCalendar(data) {

@@ -951,6 +951,257 @@ function apiChartData() {
   }
 }
 
+function apiDashboardAreas() {
+  try {
+    const hierarchy = buildAreaHierarchy();
+    return {
+      ok: true,
+      areas: hierarchy.areas,
+      map: hierarchy.map
+    };
+  } catch (e) {
+    return { ok: false, error: e.toString(), areas: [], map: {} };
+  }
+}
+
+function apiChartBars(params) {
+  try {
+    const requestedArea = normalizeAreaFilter(params && params.area);
+    const hierarchy = buildAreaHierarchy();
+
+    // Agrupamento por área/subárea a partir do STATS (fallback LOG).
+    const aggregation = aggregateStatsForBars(requestedArea);
+    const hasData = aggregation.data.length > 0;
+
+    const response = {
+      ok: true,
+      label: requestedArea === 'ALL'
+        ? 'Acertos por Área'
+        : `Acertos por Subárea (${requestedArea})`,
+      data: aggregation.data,
+      metric: 'taxa'
+    };
+
+    if (!hasData && requestedArea !== 'ALL' && hierarchy.areas.indexOf(requestedArea) === -1) {
+      // Se a área solicitada não existir, devolve estrutura vazia mas consistente.
+      response.label = 'Acertos por Subárea';
+    }
+
+    return response;
+  } catch (e) {
+    return { ok: false, error: e.toString(), label: 'Acertos por Área', data: [], metric: 'taxa' };
+  }
+}
+
+function apiChartLine(params) {
+  try {
+    const requestedArea = normalizeAreaFilter(params && params.area);
+    const windowDays = Math.max(1, safeNumber(params && params.windowDays) || 28);
+    const aggMode = (params && typeof params.agg === 'string') ? params.agg.toLowerCase() : 'daily';
+    const aggregationMode = aggMode === 'weekly' ? 'weekly' : 'daily';
+
+    const series = aggregateLogForLineChart(requestedArea, windowDays, aggregationMode);
+
+    return {
+      ok: true,
+      label: requestedArea === 'ALL'
+        ? `Progressão por Área (${windowDays}d)`
+        : `Progressão por Subárea (${requestedArea}, ${windowDays}d)`,
+      series: series
+    };
+  } catch (e) {
+    return { ok: false, error: e.toString(), label: 'Progressão Temporal', series: [] };
+  }
+}
+
+function buildAreaHierarchy() {
+  const areaSet = new Set();
+  const areaToSub = {};
+
+  const stats = readSheetData(SHEET_NAMES.STATS) || [];
+  stats.forEach(row => {
+    if (!row) return;
+    const area = sanitizeArea(row.area);
+    const sub = sanitizeSubarea(row.subarea);
+    if (!area) return;
+    areaSet.add(area);
+    if (sub) {
+      if (!areaToSub[area]) areaToSub[area] = new Set();
+      areaToSub[area].add(sub);
+    }
+  });
+
+  if (areaSet.size === 0) {
+    const logs = readSheetData(SHEET_NAMES.LOG) || [];
+    logs.forEach(row => {
+      if (!row) return;
+      const area = sanitizeArea(row.area);
+      const sub = sanitizeSubarea(row.subarea);
+      if (!area) return;
+      areaSet.add(area);
+      if (sub) {
+        if (!areaToSub[area]) areaToSub[area] = new Set();
+        areaToSub[area].add(sub);
+      }
+    });
+  }
+
+  const areas = Array.from(areaSet).sort();
+  const map = {};
+  areas.forEach(area => {
+    if (areaToSub[area] && areaToSub[area].size > 0) {
+      map[area] = Array.from(areaToSub[area]).sort();
+    } else {
+      map[area] = [];
+    }
+  });
+
+  return { areas, map };
+}
+
+function aggregateStatsForBars(requestedArea) {
+  const stats = readSheetData(SHEET_NAMES.STATS) || [];
+  const grouped = {};
+
+  // Agrupamento principal por área/subárea utilizando STATS como fonte primária.
+  stats.forEach(row => {
+    if (!row) return;
+    const area = sanitizeArea(row.area) || 'Sem área';
+    const sub = sanitizeSubarea(row.subarea) || 'Sem subárea';
+    const targetLabel = requestedArea === 'ALL' ? area : (area === requestedArea ? sub : null);
+    if (!targetLabel) return;
+    if (!grouped[targetLabel]) grouped[targetLabel] = { acertos: 0, questoes: 0 };
+    const questoes = Math.max(0, safeNumber(row.questoes));
+    const acertos = Math.max(0, Math.min(safeNumber(row.acertos), questoes));
+    grouped[targetLabel].questoes += questoes;
+    grouped[targetLabel].acertos += acertos;
+  });
+
+  if (Object.keys(grouped).length === 0) {
+    const logs = readSheetData(SHEET_NAMES.LOG) || [];
+    // Fallback: agrupa LOG quando STATS está vazio.
+    logs.forEach(row => {
+      if (!row) return;
+      const area = sanitizeArea(row.area) || 'Sem área';
+      const sub = sanitizeSubarea(row.subarea) || 'Sem subárea';
+      const targetLabel = requestedArea === 'ALL' ? area : (area === requestedArea ? sub : null);
+      if (!targetLabel) return;
+      if (!grouped[targetLabel]) grouped[targetLabel] = { acertos: 0, questoes: 0 };
+      const questoes = Math.max(0, safeNumber(row.total));
+      const acertos = Math.max(0, Math.min(safeNumber(row.acertos), questoes));
+      grouped[targetLabel].questoes += questoes;
+      grouped[targetLabel].acertos += acertos;
+    });
+  }
+
+  const data = Object.keys(grouped)
+    .sort()
+    .map(label => {
+      const bucket = grouped[label];
+      const questoes = bucket.questoes;
+      const acertos = Math.min(bucket.acertos, questoes > 0 ? questoes : bucket.acertos);
+      const taxa = questoes > 0 ? acertos / questoes : 0;
+      return {
+        label,
+        acertos,
+        questoes,
+        taxa
+      };
+    });
+
+  return { data };
+}
+
+function aggregateLogForLineChart(requestedArea, windowDays, aggregationMode) {
+  const logs = readSheetData(SHEET_NAMES.LOG) || [];
+  if (!logs.length) {
+    // Tratamento para “sem dados”: retorna array vazio sem lançar erro.
+    return [];
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today.getTime());
+  start.setDate(start.getDate() - (windowDays - 1));
+
+  const seriesBuckets = {};
+
+  // Agrupamento temporal do LOG por dia/semana com filtro de área/subárea.
+  logs.forEach(row => {
+    if (!row) return;
+    const area = sanitizeArea(row.area);
+    if (!area) return;
+    if (requestedArea !== 'ALL' && area !== requestedArea) return;
+
+    const sub = sanitizeSubarea(row.subarea) || 'Sem subárea';
+    const totalQuestoes = Math.max(0, safeNumber(row.total));
+    const totalAcertos = Math.max(0, Math.min(safeNumber(row.acertos), totalQuestoes));
+    if (totalQuestoes === 0 && totalAcertos === 0) return;
+
+    const parsedDate = parseSheetDate(row.data);
+    if (!parsedDate) return;
+    parsedDate.setHours(0, 0, 0, 0);
+    if (parsedDate < start || parsedDate > today) return;
+
+    const bucketDate = aggregationMode === 'weekly' ? getIsoWeekStart(parsedDate) : new Date(parsedDate.getTime());
+    const bucketKey = formatDateISO(bucketDate);
+    const seriesName = requestedArea === 'ALL' ? (area || 'Sem área') : sub;
+
+    if (!seriesBuckets[seriesName]) seriesBuckets[seriesName] = {};
+    if (!seriesBuckets[seriesName][bucketKey]) {
+      seriesBuckets[seriesName][bucketKey] = { acertos: 0, questoes: 0 };
+    }
+
+    seriesBuckets[seriesName][bucketKey].questoes += totalQuestoes;
+    seriesBuckets[seriesName][bucketKey].acertos += totalAcertos;
+  });
+
+  return Object.keys(seriesBuckets)
+    .sort()
+    .map(name => {
+      const buckets = seriesBuckets[name];
+      const points = Object.keys(buckets)
+        .sort()
+        .map(dateKey => {
+          const bucket = buckets[dateKey];
+          const taxa = bucket.questoes > 0 ? bucket.acertos / bucket.questoes : 0;
+          return { date: dateKey, taxa };
+        });
+      return { name, points };
+    })
+    .filter(series => series.points.length > 0);
+}
+
+function sanitizeArea(area) {
+  return area ? String(area).trim() : '';
+}
+
+function sanitizeSubarea(subarea) {
+  return subarea ? String(subarea).trim() : '';
+}
+
+function normalizeAreaFilter(area) {
+  const normalized = sanitizeArea(area);
+  if (!normalized || normalized.toUpperCase() === 'ALL') {
+    return 'ALL';
+  }
+  return normalized;
+}
+
+function safeNumber(value) {
+  const num = Number(value);
+  return isFinite(num) ? num : 0;
+}
+
+function getIsoWeekStart(date) {
+  const monday = new Date(date.getTime());
+  const day = monday.getDay();
+  const diff = day === 0 ? -6 : (1 - day);
+  monday.setDate(monday.getDate() + diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+
 // ============================================================================
 // ALGORITMO: FUNÇÕES AUXILIARES
 // ============================================================================
