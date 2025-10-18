@@ -4474,7 +4474,7 @@
     function drawChart(data) {
       const chartData = google.visualization.arrayToDataTable(data);
       const options = {
-        title: 'Distribuição de Conteúdo por Área',
+        title: 'Taxa de acertos por área',
         backgroundColor: '#1e293b',
         titleTextStyle: { color: '#f1f5f9', fontSize: 16 },
         legend: { position: 'none' },
@@ -4483,7 +4483,7 @@
           titleTextStyle: { color: '#cbd5e1' }
         },
         vAxis: {
-          title: 'Cobertura (%)',
+          title: 'Acertos (%)',
           textStyle: { color: '#cbd5e1' },
           titleTextStyle: { color: '#cbd5e1' },
           minValue: 0,

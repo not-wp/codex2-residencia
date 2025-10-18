@@ -922,25 +922,27 @@ function apiChartData() {
   try {
     const stats = readSheetData(SHEET_NAMES.STATS);
 
-    // Agrupar por área e calcular participação relativa do volume estudado.
+    // Agrupar por área e calcular o percentual total de acertos.
     const areaTotals = {};
-    let totalQuestoes = 0;
     stats.forEach(row => {
       if (!row) return;
       const area = row.area || 'Sem área';
       const questoes = parseFloat(row.questoes);
+      const acertos = parseFloat(row.acertos);
       const safeQuestoes = isFinite(questoes) && questoes > 0 ? questoes : 0;
+      const safeAcertos = isFinite(acertos) && acertos > 0 ? Math.min(acertos, safeQuestoes || acertos) : 0;
       if (!areaTotals[area]) {
-        areaTotals[area] = 0;
+        areaTotals[area] = { acertos: 0, questoes: 0 };
       }
-      areaTotals[area] += safeQuestoes;
-      totalQuestoes += safeQuestoes;
+      areaTotals[area].questoes += safeQuestoes;
+      areaTotals[area].acertos += safeAcertos;
     });
 
-    const chartData = [['Área', 'Cobertura %']];
+    const chartData = [['Área', 'Acerto %']];
     Object.keys(areaTotals).forEach(area => {
-      const share = totalQuestoes > 0 ? (areaTotals[area] / totalQuestoes) * 100 : 0;
-      chartData.push([area, share]);
+      const totals = areaTotals[area];
+      const pct = totals.questoes > 0 ? (totals.acertos / totals.questoes) * 100 : 0;
+      chartData.push([area, pct]);
     });
 
     return { ok: true, data: chartData };
