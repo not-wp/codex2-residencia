@@ -2950,6 +2950,8 @@
     let googleChartsReady = false;
     let dashboardBarChart = null;
     let dashboardLineChart = null;
+    let dashboardBarsRequestId = 0;
+    let dashboardLineRequestId = 0;
 
     const alvoSuggestionSet = new Set();
     const areaSuggestionSet = new Set();
@@ -3002,22 +3004,23 @@
 
     if (dashAreaSelect) {
       dashAreaSelect.addEventListener('change', function() {
-        dashboardAreaSelection = this.value || 'ALL';
-        atualizarGraficosDashboard();
+        const selected = this.value || 'ALL';
+        dashboardAreaSelection = selected;
+        atualizarGraficosDashboard(selected);
       });
     }
 
     if (dashWindowSelect) {
       dashWindowSelect.addEventListener('change', function() {
         dashboardWindowDays = Number(this.value) || 28;
-        atualizarGraficoLinhaDashboard();
+        atualizarGraficoLinhaDashboard(dashboardAreaSelection);
       });
     }
 
     if (dashAggSelect) {
       dashAggSelect.addEventListener('change', function() {
         dashboardAggMode = (this.value || 'daily');
-        atualizarGraficoLinhaDashboard();
+        atualizarGraficoLinhaDashboard(dashboardAreaSelection);
       });
     }
 
@@ -4636,7 +4639,7 @@
             toast('Não foi possível carregar áreas para os filtros', 'warning');
           }
           populateDashboardAreaSelect();
-          atualizarGraficosDashboard();
+          atualizarGraficosDashboard(dashboardAreaSelection);
         })
         .withFailureHandler(function(error) {
           console.error('Erro ao carregar áreas do dashboard:', error);
@@ -4644,7 +4647,7 @@
           dashboardAreas = [];
           dashboardAreaMap = {};
           populateDashboardAreaSelect();
-          atualizarGraficosDashboard();
+          atualizarGraficosDashboard(dashboardAreaSelection);
         })
         .apiDashboardAreas();
     }
@@ -4675,24 +4678,40 @@
       }
     }
 
-    function atualizarGraficosDashboard() {
-      atualizarGraficoBarrasDashboard();
-      atualizarGraficoLinhaDashboard();
+    function atualizarGraficosDashboard(areaOverride) {
+      atualizarGraficoBarrasDashboard(areaOverride);
+      atualizarGraficoLinhaDashboard(areaOverride);
     }
 
-    function atualizarGraficoBarrasDashboard() {
-      const area = dashboardAreaSelection || 'ALL';
-      exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Carregando gráfico...');
+    function atualizarGraficoBarrasDashboard(areaOverride) {
+      if (!googleChartsReady) {
+        google.charts.setOnLoadCallback(function() {
+          atualizarGraficoBarrasDashboard(areaOverride);
+        });
+        return;
+      }
+
+      const selectArea = dashAreaSelect && dashAreaSelect.value ? dashAreaSelect.value : dashboardAreaSelection;
+      const effectiveArea = typeof areaOverride === 'string' && areaOverride.length ? areaOverride : (selectArea || 'ALL');
+      dashboardAreaSelection = effectiveArea || 'ALL';
+      if (dashAreaSelect && dashAreaSelect.value !== dashboardAreaSelection) {
+        dashAreaSelect.value = dashboardAreaSelection;
+      }
+
+      const requestId = ++dashboardBarsRequestId;
+      exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Atualizando gráfico...');
 
       google.script.run
         .withSuccessHandler(function(result) {
+          if (requestId !== dashboardBarsRequestId) return;
+
           const titleEl = document.getElementById('chartBarsTitle');
           const subtitleEl = document.getElementById('chartBarsSubtitle');
           if (titleEl) titleEl.textContent = result && result.label ? result.label : 'Acertos por Área';
           if (subtitleEl) {
-            subtitleEl.textContent = area === 'ALL'
+            subtitleEl.textContent = dashboardAreaSelection === 'ALL'
               ? 'Mostrando a taxa média de acertos por área.'
-              : `Mostrando subáreas da área ${area}.`;
+              : `Mostrando subáreas da área ${dashboardAreaSelection}.`;
           }
 
           if (result && result.ok && Array.isArray(result.data) && result.data.length) {
@@ -4702,19 +4721,36 @@
           }
         })
         .withFailureHandler(function(error) {
+          if (requestId !== dashboardBarsRequestId) return;
           console.error('Erro ao carregar gráfico de barras:', error);
           toast('Erro ao carregar gráfico de barras', 'error');
           exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao carregar dados.');
         })
-        .apiChartBars({ area });
+        .apiChartBars({ area: dashboardAreaSelection });
     }
 
-    function atualizarGraficoLinhaDashboard() {
-      const area = dashboardAreaSelection || 'ALL';
-      exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Carregando gráfico...');
+    function atualizarGraficoLinhaDashboard(areaOverride) {
+      if (!googleChartsReady) {
+        google.charts.setOnLoadCallback(function() {
+          atualizarGraficoLinhaDashboard(areaOverride);
+        });
+        return;
+      }
+
+      const selectArea = dashAreaSelect && dashAreaSelect.value ? dashAreaSelect.value : dashboardAreaSelection;
+      const effectiveArea = typeof areaOverride === 'string' && areaOverride.length ? areaOverride : (selectArea || 'ALL');
+      dashboardAreaSelection = effectiveArea || 'ALL';
+      if (dashAreaSelect && dashAreaSelect.value !== dashboardAreaSelection) {
+        dashAreaSelect.value = dashboardAreaSelection;
+      }
+
+      const requestId = ++dashboardLineRequestId;
+      exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Atualizando gráfico...');
 
       google.script.run
         .withSuccessHandler(function(result) {
+          if (requestId !== dashboardLineRequestId) return;
+
           const titleEl = document.getElementById('chartLineTitle');
           const subtitleEl = document.getElementById('chartLineSubtitle');
           if (titleEl) titleEl.textContent = result && result.label ? result.label : 'Progressão Temporal';
@@ -4731,11 +4767,12 @@
           }
         })
         .withFailureHandler(function(error) {
+          if (requestId !== dashboardLineRequestId) return;
           console.error('Erro ao carregar gráfico de linha:', error);
           toast('Erro ao carregar gráfico de linha', 'error');
           exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao carregar dados.');
         })
-        .apiChartLine({ area, windowDays: dashboardWindowDays, agg: dashboardAggMode });
+        .apiChartLine({ area: dashboardAreaSelection, windowDays: dashboardWindowDays, agg: dashboardAggMode });
     }
 
     function renderDashboardBarChart(result) {
@@ -4745,9 +4782,15 @@
         return;
       }
 
+      const percentFormatter = new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1
+      });
+
       const dataTable = new google.visualization.DataTable();
       dataTable.addColumn('string', 'Área');
       dataTable.addColumn('number', 'Taxa de acerto (%)');
+      dataTable.addColumn({ type: 'string', role: 'annotation' });
       dataTable.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
 
       (result.data || []).forEach(item => {
@@ -4755,19 +4798,24 @@
         const acertos = Number(item.acertos) || 0;
         const questoes = Number(item.questoes) || 0;
         const taxaPct = Math.max(0, Math.min(100, (Number(item.taxa) || 0) * 100));
+        const pctLabel = `${percentFormatter.format(taxaPct)}%`;
         const tooltip = `
           <div style="padding:6px 8px;">
             <strong>${label}</strong><br>
-            Acertos ${acertos} / ${questoes} (${taxaPct.toFixed(1)}%)
+            Acertos ${acertos} / ${questoes} (${pctLabel})
           </div>`;
-        dataTable.addRow([label, parseFloat(taxaPct.toFixed(2)), tooltip]);
+        dataTable.addRow([label, parseFloat(taxaPct.toFixed(2)), pctLabel, tooltip]);
       });
+
+      const numberFormatter = new google.visualization.NumberFormat({ suffix: '%', fractionDigits: 1 });
+      numberFormatter.format(dataTable, 1);
 
       const options = {
         title: result.label || 'Acertos por Área',
         backgroundColor: 'transparent',
         titleTextStyle: { color: '#f1f5f9', fontSize: 15 },
         legend: { position: 'none' },
+        focusTarget: 'category',
         hAxis: {
           textStyle: { color: '#cbd5e1' }
         },
@@ -4777,10 +4825,18 @@
           titleTextStyle: { color: '#cbd5e1' },
           minValue: 0,
           maxValue: 100,
-          viewWindow: { min: 0, max: 100 }
+          viewWindow: { min: 0, max: 100 },
+          gridlines: { color: 'rgba(148, 163, 184, 0.2)' }
         },
-        tooltip: { isHtml: true, textStyle: { color: '#0f172a' } },
-        colors: ['#3b82f6'],
+        tooltip: { isHtml: true, textStyle: { color: '#0f172a' }, ignoreBounds: true },
+        annotations: {
+          textStyle: {
+            color: '#f8fafc',
+            fontSize: 12,
+            auraColor: 'rgba(15, 23, 42, 0.45)'
+          }
+        },
+        colors: ['#38bdf8'],
         chartArea: { width: '78%', height: '68%' }
       };
 
@@ -4844,11 +4900,19 @@
 
       dataTable.addRows(dateToRow);
 
+      const numberFormatter = new google.visualization.NumberFormat({ suffix: '%', fractionDigits: 1 });
+      for (let col = 1; col < dataTable.getNumberOfColumns(); col++) {
+        numberFormatter.format(dataTable, col);
+      }
+
+      const palette = ['#f97316', '#38bdf8', '#22d3ee', '#a855f7', '#34d399', '#facc15', '#fb7185'];
+
       const options = {
         backgroundColor: 'transparent',
         title: result.label || 'Progressão Temporal',
         titleTextStyle: { color: '#f1f5f9', fontSize: 15 },
         legend: { position: 'top', textStyle: { color: '#cbd5e1' } },
+        focusTarget: 'category',
         hAxis: {
           textStyle: { color: '#cbd5e1' },
           format: 'dd/MM'
@@ -4859,10 +4923,17 @@
           titleTextStyle: { color: '#cbd5e1' },
           minValue: 0,
           maxValue: 100,
-          viewWindow: { min: 0, max: 100 }
+          viewWindow: { min: 0, max: 100 },
+          format: "#'%'",
+          gridlines: { color: 'rgba(148, 163, 184, 0.2)' }
         },
+        tooltip: { textStyle: { color: '#0f172a' } },
         curveType: 'function',
-        chartArea: { width: '78%', height: '68%' }
+        lineWidth: 3,
+        pointSize: 5,
+        colors: palette.slice(0, dataTable.getNumberOfColumns() - 1),
+        chartArea: { width: '78%', height: '68%' },
+        crosshair: { color: '#cbd5e1', trigger: 'both' }
       };
 
       mostrarGrafico('chart_linha_progresso', 'chartLinePlaceholder');
