@@ -2197,236 +2197,240 @@ function runBanditPlanner(reviewList, settings, customBudgetMinutes) {
 
 function apiMakeReviewToday() {
   try {
-    // Endpoint da fila diária protegido por try/catch para garantir retorno consistente.
-    const settings = apiGetSettings();
+    const settings = apiGetSettings() || DEFAULT_SETTINGS;
+    const policyVersion = asBoolean(settings.useAdvancedPriority) ? 'advanced_v1' : 'classic_v1';
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const spacedSheet = ss.getSheetByName(SHEET_NAMES.SPACED);
+    const reviewSheet = getOrCreateSheet(SHEET_NAMES.REVER_HOJE, HEADERS.REVER_HOJE);
+
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
-
-    const gather = gatherReviewCandidates(settings, hoje);
     const hojeISO = formatDateISO(hoje);
-    const spacedSheet = gather.spacedSheet;
-    const reviewSheet = gather.reviewSheet;
 
     if (!spacedSheet) {
       clearSheetData(SHEET_NAMES.REVER_HOJE);
-      return { ok: true, count: 0, data: [], items: [] };
+      return { ok: true, date: hojeISO, count: 0, items: [], data: [] };
     }
 
-    const reviewList = gather.reviewList;
-    const priorityUpdates = gather.priorityUpdates;
-    const priorityByAlvo = gather.priorityByAlvo;
-    const spacedData = gather.spacedData;
-    const priorityCol = gather.priorityCol;
-    const useAdvanced = gather.useAdvanced;
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const statsData = readSheetData(SHEET_NAMES.STATS);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const reviewHojeData = readSheetData(SHEET_NAMES.REVER_HOJE);
 
-    if (spacedData.length > 0 && priorityCol > 0 && priorityUpdates.length === spacedData.length) {
-      const values = spacedData.map((row, idx) => {
-        const alvo = row.alvo;
-        const update = priorityUpdates[idx];
-        const fallback = update ? update.value : 0;
-        const val = alvo && priorityByAlvo[alvo] !== undefined ? priorityByAlvo[alvo] : fallback;
-        return [val];
-      });
-      spacedSheet.getRange(2, priorityCol, values.length, 1).setValues(values);
-    }
+    const statsMap = {};
+    statsData.forEach(row => {
+      if (!row || !row.area) return;
+      const key = `${row.area}::${row.subarea}`;
+      statsMap[key] = row;
+    });
 
-    let finalList = reviewList.slice();
-    let policyEntries = [];
-    const policyVersion = useAdvanced ? 'advanced_v1' : 'classic_v1';
-    let banditResult = null;
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (!row || !row.alvo) return;
+      modelMap[row.alvo] = row;
+    });
 
-    if (useAdvanced && asBoolean(settings.useBanditPlanner) && reviewList.length > 0) {
-      banditResult = runBanditPlanner(reviewList, settings);
-      const selectedSet = new Set((banditResult.selected || []).map(item => item.alvo));
-      const metrics = banditResult.metrics || {};
-      finalList = banditResult.selected;
-
-      const allDecisions = reviewList.map(item => {
-        const metric = metrics[item.alvo] || {};
-        const components = item.components || {};
-        components.banditRatio = metric.ratio;
-        components.banditCost = metric.cost;
-        components.banditValue = metric.totalValue;
-        item.components = components;
-        return {
-          item,
-          decisao: selectedSet.has(item.alvo) ? 'selected' : 'skipped',
-          metric
-        };
-      });
-
-      policyEntries = allDecisions.map(decision => {
-        const item = decision.item;
-        const areaParts = item.context && item.context.area ? {
-          area: item.context.area,
-          subarea: item.context.subarea
-        } : parseAlvoParts(item.alvo);
-        const components = item.components || {};
-        return {
-          timestamp: new Date(),
-          alvo: item.alvo,
-          area: areaParts.area,
-          subarea: areaParts.subarea,
-          pri: item.prioridade,
-          eviPerMin: components.eviPerMin !== undefined ? components.eviPerMin : '',
-          overdue: components.overdue !== undefined ? components.overdue : '',
-          diversity: components.diversity !== undefined ? components.diversity : '',
-          custos: components.custos !== undefined ? components.custos : '',
-          tempoPrev: components.tempoPrev !== undefined ? components.tempoPrev : (item.context ? item.context.tempoPrevSeg : ''),
-          decisao: decision.decisao,
-          policyVersion: policyVersion
-        };
-      });
-    } else if (finalList.length > 0) {
-      policyEntries = finalList.map(item => {
-        const areaParts = item.context && item.context.area ? {
-          area: item.context.area,
-          subarea: item.context.subarea
-        } : parseAlvoParts(item.alvo);
-        const components = item.components || {};
-        return {
-          timestamp: new Date(),
-          alvo: item.alvo,
-          area: areaParts.area,
-          subarea: areaParts.subarea,
-          pri: item.prioridade,
-          eviPerMin: components.eviPerMin !== undefined ? components.eviPerMin : '',
-          overdue: components.overdue !== undefined ? components.overdue : '',
-          diversity: components.diversity !== undefined ? components.diversity : '',
-          custos: components.custos !== undefined ? components.custos : '',
-          tempoPrev: components.tempoPrev !== undefined ? components.tempoPrev : (item.context ? item.context.tempoPrevSeg : ''),
-          decisao: 'selected',
-          policyVersion: policyVersion
-        };
-      });
-    }
-
-    // Reconstrução da aba REVER_HOJE a partir dos alvos priorizados de SPACED.
-    clearSheetData(SHEET_NAMES.REVER_HOJE);
-    const rowsToWrite = finalList.map(item => [
-      item.alvo,
-      item.prioridade,
-      item.proximaRevisao,
-      item.estabilidade,
-      item.feito || ''
-    ]);
-    if (rowsToWrite.length > 0) {
-      const startRow = reviewSheet.getLastRow() + 1;
-      reviewSheet.getRange(startRow, 1, rowsToWrite.length, HEADERS.REVER_HOJE.length).setValues(rowsToWrite);
-      reviewSheet.getRange(startRow, 3, rowsToWrite.length, 1).setNumberFormat('dd/mm/yyyy');
-    }
-
-    SpreadsheetApp.flush();
-
-    if (policyEntries.length > 0) {
-      try {
-        appendPolicyLogEntries(policyEntries);
-      } catch (logErr) {
-        Logger.log('appendPolicyLogEntries error: ' + errorToString(logErr));
+    const feitoAnterior = {};
+    reviewHojeData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const raw = row.feito;
+      if (raw !== undefined && raw !== null && `${raw}`.toString().trim() !== '' && `${raw}` !== '0') {
+        feitoAnterior[row.alvo] = raw;
       }
-    }
+    });
 
-    const caps = {
-      Smin: toFiniteOrNull(settings.Smin, DEFAULT_SETTINGS.Smin),
-      Smax: toFiniteOrNull(settings.Smax, DEFAULT_SETTINGS.Smax),
-      Imin: toFiniteOrNull(settings.Imin, DEFAULT_SETTINGS.Imin),
-      Imax: toFiniteOrNull(settings.Imax, DEFAULT_SETTINGS.Imax)
-    };
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const alpha = toFiniteOrNull(settings.alpha, DEFAULT_SETTINGS.alpha) || DEFAULT_SETTINGS.alpha;
+    const overdueMode = settings.overdueMode || DEFAULT_SETTINGS.overdueMode || 'linear';
+    const wPeg = toFiniteOrNull(settings.wPeg, DEFAULT_SETTINGS.wPeg) || DEFAULT_SETTINGS.wPeg;
+    const wTempo = toFiniteOrNull(settings.wTempo, DEFAULT_SETTINGS.wTempo) || DEFAULT_SETTINGS.wTempo;
+    const wDif = toFiniteOrNull(settings.wDif, DEFAULT_SETTINGS.wDif) || DEFAULT_SETTINGS.wDif;
 
-    // Fórmula base: prioridade ≈ (1 − R(t)) + overdue + custos, com ajustes quando o modo avançado está ativo.
-    const responseList = finalList.map(item => {
-      const components = item.components || {};
-      const diag = item.modelRow ? {
-        sigma: item.modelRow.sigma,
-        n_eff: item.modelRow.n_eff
-      } : null;
-      const context = item.context || {};
-      const alvoParts = (context.area || context.subarea)
-        ? { area: context.area, subarea: context.subarea }
-        : parseAlvoParts(item.alvo || '');
+    const Smin = toFiniteOrNull(settings.Smin, DEFAULT_SETTINGS.Smin) || DEFAULT_SETTINGS.Smin;
+    const Smax = toFiniteOrNull(settings.Smax, DEFAULT_SETTINGS.Smax) || DEFAULT_SETTINGS.Smax;
+    const Imin = toFiniteOrNull(settings.Imin, DEFAULT_SETTINGS.Imin) || DEFAULT_SETTINGS.Imin;
+    const Imax = toFiniteOrNull(settings.Imax, DEFAULT_SETTINGS.Imax) || DEFAULT_SETTINGS.Imax;
 
-      const tempoPrevSeg = context.tempoPrevSeg !== undefined
-        ? Number(context.tempoPrevSeg)
-        : (components.costMinutes !== undefined && components.costMinutes !== null
-          ? Number(components.costMinutes) * 60
-          : null);
-      const tempoPrevMinRaw = tempoPrevSeg !== null && tempoPrevSeg !== undefined
-        ? tempoPrevSeg / 60
-        : (components.costMinutes !== undefined ? Number(components.costMinutes) : null);
+    const priorityValues = [];
+    const dueItems = [];
 
-      const estabilidadeSheet = toFiniteOrNull(item.estabilidade, null);
-      const estabilidadeCtx = context.S !== undefined ? Number(context.S) : Number(estabilidadeSheet);
-      const baseRecall = context.baseRecall !== undefined ? Number(context.baseRecall) : null;
-      const recallHojeRaw = baseRecall !== null && baseRecall !== undefined ? clamp(1 - baseRecall, 0, 1) : null;
+    spacedData.forEach(row => {
+      if (!row || !row.alvo) {
+        priorityValues.push([0]);
+        return;
+      }
 
-      let overdueRaw = components.overdue !== undefined ? Number(components.overdue) : null;
-      if (overdueRaw === null || isNaN(overdueRaw)) {
-        if (context.overdueValue !== undefined) {
-          overdueRaw = Number(context.overdueValue);
-        } else if (context.overdueRaw !== undefined) {
-          overdueRaw = Number(context.overdueRaw);
+      const alvo = row.alvo.toString().trim();
+      if (!alvo) {
+        priorityValues.push([0]);
+        return;
+      }
+
+      const parts = parseAlvoParts(alvo);
+      const statsRow = statsMap[alvo];
+      const modelRow = modelMap[alvo];
+
+      let S = toFiniteOrNull(row.estabilidade, null);
+      if (!isFinite(S) || S === null || S <= 0) {
+        const modelS = modelRow ? toFiniteOrNull(modelRow.S_atual, null) : null;
+        if (isFinite(modelS) && modelS !== null && modelS > 0) {
+          S = modelS;
+        } else {
+          S = Smin;
+        }
+      }
+      S = clamp(S, Smin, Smax);
+
+      const proximaDate = parseSheetDate(row.proximaRevisao);
+      const ultimaDate = parseSheetDate(row.ultimaRevisao);
+
+      let diasDesdeUltima = 0;
+      if (ultimaDate instanceof Date && !isNaN(ultimaDate)) {
+        diasDesdeUltima = Math.max(0, Math.round((hoje.getTime() - ultimaDate.getTime()) / msPerDay));
+      } else if (proximaDate instanceof Date && !isNaN(proximaDate)) {
+        const diff = Math.round((hoje.getTime() - proximaDate.getTime()) / msPerDay);
+        diasDesdeUltima = Math.max(0, diff + Math.round(S));
+      } else {
+        diasDesdeUltima = Math.round(S);
+      }
+
+      let atrasoDias = 0;
+      let proximaRef = null;
+      if (proximaDate instanceof Date && !isNaN(proximaDate)) {
+        proximaDate.setHours(0, 0, 0, 0);
+        proximaRef = proximaDate;
+        if (proximaDate.getTime() <= hoje.getTime()) {
+          atrasoDias = Math.max(0, Math.round((hoje.getTime() - proximaDate.getTime()) / msPerDay));
         }
       }
 
-      const tempoEstimadoRaw = tempoPrevMinRaw !== null && tempoPrevMinRaw !== undefined
-        ? tempoPrevMinRaw
-        : (components.costMinutes !== undefined ? Number(components.costMinutes) : null);
+      const recallHoje = Math.exp(-diasDesdeUltima / Math.max(1, S));
+      const baseRecall = clamp(1 - recallHoje, 0, 1);
 
-      const prioridadeVal = toFiniteOrNull(item.prioridade, 0);
-      const proximaRevisaoStr = item.proximaRevisao ? formatDateDDMMYYYY(item.proximaRevisao) : '';
-      const estabilidadeSafe = toFiniteOrNull(estabilidadeCtx, estabilidadeSheet);
-      const recallHojeSafe = toFiniteOrNull(recallHojeRaw, null);
-      const overdueSafe = toFiniteOrNull(overdueRaw, null);
-      const tempoPrevMinSafe = toFiniteOrNull(tempoPrevMinRaw, null);
-      const tempoEstSafe = toFiniteOrNull(tempoEstimadoRaw, null);
-      const pegSafe = toFiniteOrNull(context.peg, null);
-      const tempoRelSafe = toFiniteOrNull(context.tempoRel, null);
-      const difNormSafe = toFiniteOrNull(context.difNorm, null);
-      const atrasoDiasSafe = toFiniteOrNull(context.atrasoDias, null);
-      const baseRecallSafe = toFiniteOrNull(baseRecall, null);
+      let tempoMedioSeg = statsRow ? toFiniteOrNull(statsRow.tempo_medio, null) : null;
+      if (!isFinite(tempoMedioSeg) || tempoMedioSeg === null || tempoMedioSeg <= 0) {
+        tempoMedioSeg = 60;
+      }
+      const tempoRel = clamp(tempoMedioSeg / 120, 0, 1);
+      const tempoEstMin = Math.max(0.5, tempoMedioSeg / 60);
 
-      return {
-        alvo: item.alvo || '',
-        area: alvoParts.area || '',
-        subarea: alvoParts.subarea || '',
-        prioridade: prioridadeVal,
-        proximaRevisao: proximaRevisaoStr,
-        estabilidade: estabilidadeSheet,
-        feito: item.feito || '',
-        eviPerMin: toFiniteOrNull(components.eviPerMin, null),
-        eviPerMinMean: toFiniteOrNull(components.eviPerMinMean, null),
-        eviTotal: toFiniteOrNull(components.eviTotalLCB, null),
-        custos: toFiniteOrNull(components.custos, null),
-        overdue: overdueSafe,
-        diversity: toFiniteOrNull(components.diversity, null),
-        costMinutes: toFiniteOrNull(components.costMinutes, null),
-        diagnostics: diag,
-        atrasoDias: atrasoDiasSafe,
-        tempoPrevMin: tempoPrevMinSafe,
-        baseRecall: baseRecallSafe,
-        S: estabilidadeSafe,
-        Rhoje: recallHojeSafe,
-        tempoEstMin: tempoEstSafe,
-        peg: pegSafe,
-        tempo_rel: tempoRelSafe,
-        dif_norm: difNormSafe,
-        caps: Object.assign({}, caps)
-      };
+      let difNorm = 0;
+      if (statsRow && statsRow.dif_media !== undefined) {
+        const difMedia = toFiniteOrNull(statsRow.dif_media, null);
+        if (isFinite(difMedia) && difMedia !== null) {
+          difNorm = clamp((difMedia - 1) / 4, 0, 1);
+        }
+      } else if (row.dificuldade_media !== undefined) {
+        const difMedia = toFiniteOrNull(row.dificuldade_media, null);
+        if (isFinite(difMedia) && difMedia !== null) {
+          difNorm = clamp((difMedia - 1) / 4, 0, 1);
+        }
+      }
+
+      let peg = 0;
+      if (statsRow) {
+        const flags = toFiniteOrNull(statsRow.flags_28d, null);
+        if (isFinite(flags) && flags !== null) {
+          peg = clamp(flags / 10, 0, 1);
+        } else {
+          const acc28 = toFiniteOrNull(statsRow.acerto_28d, null);
+          const accVida = toFiniteOrNull(statsRow.acerto_vida, null);
+          const baseAcc = isFinite(acc28) && acc28 !== null ? acc28 : (isFinite(accVida) && accVida !== null ? accVida : 0.7);
+          peg = clamp(1 - baseAcc, 0, 1);
+        }
+      }
+
+      const custos = (wPeg * peg) + (wTempo * tempoRel) + (wDif * difNorm);
+      const overdueValor = calcOverdue(atrasoDias, Math.max(1, S), alpha, overdueMode);
+
+      const prioridade = isFinite(baseRecall + overdueValor + custos) ? (baseRecall + overdueValor + custos) : 0;
+      priorityValues.push([prioridade]);
+
+      if (proximaRef && proximaRef.getTime() <= hoje.getTime()) {
+        dueItems.push({
+          alvo,
+          area: parts.area || '',
+          subarea: parts.subarea || '',
+          prioridade,
+          prioridadeBase: prioridade,
+          S,
+          Rhoje: recallHoje,
+          overdue: overdueValor,
+          atrasoDias,
+          tempoEstMin,
+          tempoPrevMin: tempoEstMin,
+          tempo_rel: tempoRel,
+          peg,
+          dif_norm: difNorm,
+          baseRecall,
+          feito: feitoAnterior[alvo] || '',
+          proximaRevisaoStr: formatDateDDMMYYYY(proximaRef),
+          proximaDate: proximaRef,
+          caps: { Smin, Smax, Imin, Imax }
+        });
+      }
     });
+
+    const priorityCol = HEADERS.SPACED.indexOf('prioridade') + 1;
+    if (priorityCol > 0 && priorityValues.length > 0) {
+      try {
+        spacedSheet.getRange(2, priorityCol, priorityValues.length, 1).setValues(priorityValues);
+      } catch (priorityErr) {
+        Logger.log('Falha ao escrever prioridades: ' + errorToString(priorityErr));
+      }
+    }
+
+    dueItems.sort((a, b) => (b.prioridade || 0) - (a.prioridade || 0));
+
+    // Reconstrói a aba REVER_HOJE a partir dos alvos vencidos em SPACED.
+    clearSheetData(SHEET_NAMES.REVER_HOJE);
+    if (dueItems.length > 0) {
+      const rows = dueItems.map(item => [
+        item.alvo,
+        item.prioridade,
+        item.proximaDate || hoje,
+        item.S,
+        item.feito ? item.feito : ''
+      ]);
+      try {
+        reviewSheet.getRange(2, 1, rows.length, HEADERS.REVER_HOJE.length).setValues(rows);
+        reviewSheet.getRange(2, 3, rows.length, 1).setNumberFormat('dd/mm/yyyy');
+      } catch (writeErr) {
+        Logger.log('Falha ao reescrever REVER_HOJE: ' + errorToString(writeErr));
+      }
+    }
+
+    const responseItems = dueItems.map(item => ({
+      // Fórmula base da prioridade: (1 − R(t)) + overdue + custos.
+      alvo: item.alvo,
+      area: item.area,
+      subarea: item.subarea,
+      prioridade: item.prioridade,
+      prioridadeBase: item.prioridadeBase,
+      S: item.S,
+      Rhoje: item.Rhoje,
+      overdue: item.overdue,
+      atrasoDias: item.atrasoDias,
+      tempoEstMin: item.tempoEstMin,
+      tempoPrevMin: item.tempoPrevMin,
+      tempo_rel: item.tempo_rel,
+      peg: item.peg,
+      dif_norm: item.dif_norm,
+      baseRecall: item.baseRecall,
+      caps: item.caps,
+      feito: item.feito,
+      proximaRevisao: item.proximaRevisaoStr
+    }));
 
     return {
       ok: true,
       date: hojeISO,
-      count: finalList.length,
-      items: responseList,
-      data: responseList,
+      count: responseItems.length,
+      items: responseItems,
+      data: responseItems,
       policyVersion,
-      bandit: banditResult
-        ? {
-            budget: toFiniteOrNull(banditResult.budget, null),
-            totalCost: toFiniteOrNull(banditResult.totalCost, null)
-          }
-        : null
+      budgetMin: 0,
+      bandit: null
     };
 
   } catch (e) {
