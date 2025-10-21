@@ -569,9 +569,8 @@ function apiSaveSettings(obj) {
     lock.releaseLock();
     
     return { ok: true };
-    } catch (e) {
-      return { ok: false, error: errorToString(e) };
-    }
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -2465,7 +2464,7 @@ function apiLogRetrospective(payload) {
     const totalMinutes = Number(params.totalMinutes) || 0;
     const totalGain = Number(params.totalGain) || 0;
     const executionPct = Number(params.executionPct) || 0;
-    const phrase = params.phrase ? params.phraserrorToString(e) : '';
+    const phrase = params.phrase ? String(params.phrase) : '';
     const topAreas = Array.isArray(params.topAreas) ? params.topAreas : [];
 
     const obsParts = [];
