@@ -213,6 +213,27 @@ function clearSheetData(sheetName) {
   SpreadsheetApp.flush();
 }
 
+// Converte qualquer erro capturado em string segura para evitar que o catch dispare outro erro.
+function errorToString(err) {
+  try {
+    if (err === null || err === undefined) {
+      return 'Erro desconhecido.';
+    }
+    if (typeof err === 'string') {
+      return err;
+    }
+    if (err.stack) {
+      return String(err.stack);
+    }
+    if (err.message) {
+      return String(err.message);
+    }
+    return JSON.stringify(err);
+  } catch (stringifyErr) {
+    return 'Erro desconhecido.';
+  }
+}
+
 function clearWeibullCache(area) {
   if (area) {
     delete weibullShapeCache[area];
@@ -444,7 +465,7 @@ function apiInit() {
     lock.releaseLock();
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -548,8 +569,9 @@ function apiSaveSettings(obj) {
     lock.releaseLock();
     
     return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.toString() };
+    } catch (e) {
+      return { ok: false, error: errorToString(e) };
+    }
   }
 }
 
@@ -604,9 +626,9 @@ function apiLogBlock(payload) {
     return { ok: true, uid: uid };
     
   } catch (e) {
-    Logger.log('ERRO em apiLogBlock: ' + e.toString());
+    Logger.log('ERRO em apiLogBlock: ' + errorToString(e));
     Logger.log('Stack: ' + e.stack);
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -822,8 +844,8 @@ function apiProcessLogInternal() {
       message: `${Object.keys(statsMap).length} alvos processados com sucesso`
     };
   } catch (e) {
-    Logger.log('Erro em apiProcessLog: ' + e.toString());
-    return { ok: false, error: e.toString() };
+    Logger.log('Erro em apiProcessLog: ' + errorToString(e));
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -852,7 +874,7 @@ function apiProcessAll() {
       message: `Processamento completo: ${processResult.alvosProcessados} alvos, ${reviewResult.count} revisões hoje`
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -889,7 +911,7 @@ function apiProcessAll() {
     try {
       reviewResult = apiMakeReviewToday();
     } catch (e) {
-      Logger.log('Erro ao gerar fila: ' + e.toString());
+      Logger.log('Erro ao gerar fila: ' + errorToString(e));
       reviewResult = { ok: true, count: 0 }; // Continuar mesmo sem fila
     }
     
@@ -900,8 +922,8 @@ function apiProcessAll() {
       message: `✓ ${processResult.alvosProcessados || 0} alvos processados, ${reviewResult.count || 0} revisões hoje`
     };
   } catch (e) {
-    Logger.log('Erro em apiProcessAll: ' + e.toString());
-    return { ok: false, error: e.toString() };
+    Logger.log('Erro em apiProcessAll: ' + errorToString(e));
+    return { ok: false, error: errorToString(e) };
   }
 }
 // ============================================================================
@@ -914,7 +936,7 @@ function apiGetStats() {
     const stats = readSheetData(SHEET_NAMES.STATS);
     return { ok: true, data: stats };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -947,7 +969,7 @@ function apiChartData() {
 
     return { ok: true, data: chartData };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -960,7 +982,7 @@ function apiDashboardAreas() {
       map: hierarchy.map
     };
   } catch (e) {
-    return { ok: false, error: e.toString(), areas: [], map: {} };
+    return { ok: false, error: errorToString(e), areas: [], map: {} };
   }
 }
 
@@ -989,7 +1011,7 @@ function apiChartBars(params) {
 
     return response;
   } catch (e) {
-    return { ok: false, error: e.toString(), label: 'Acertos por Área', data: [], metric: 'taxa' };
+    return { ok: false, error: errorToString(e), label: 'Acertos por Área', data: [], metric: 'taxa' };
   }
 }
 
@@ -1010,7 +1032,7 @@ function apiChartLine(params) {
       series: series
     };
   } catch (e) {
-    return { ok: false, error: e.toString(), label: 'Progressão Temporal', series: [] };
+    return { ok: false, error: errorToString(e), label: 'Progressão Temporal', series: [] };
   }
 }
 
@@ -2144,6 +2166,7 @@ function runBanditPlanner(reviewList, settings, customBudgetMinutes) {
 
 function apiMakeReviewToday() {
   try {
+    // Endpoint da fila diária protegido por try/catch para garantir retorno consistente.
     const settings = apiGetSettings();
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
@@ -2155,7 +2178,7 @@ function apiMakeReviewToday() {
 
     if (!spacedSheet) {
       clearSheetData(SHEET_NAMES.REVER_HOJE);
-      return { ok: true, count: 0, data: [] };
+      return { ok: true, count: 0, data: [], items: [] };
     }
 
     const reviewList = gather.reviewList;
@@ -2350,7 +2373,7 @@ function apiMakeReviewToday() {
     };
 
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -2424,7 +2447,7 @@ function apiEffortPlanner(budgetMinutes) {
     };
 
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -2442,7 +2465,7 @@ function apiLogRetrospective(payload) {
     const totalMinutes = Number(params.totalMinutes) || 0;
     const totalGain = Number(params.totalGain) || 0;
     const executionPct = Number(params.executionPct) || 0;
-    const phrase = params.phrase ? params.phrase.toString() : '';
+    const phrase = params.phrase ? params.phraserrorToString(e) : '';
     const topAreas = Array.isArray(params.topAreas) ? params.topAreas : [];
 
     const obsParts = [];
@@ -2475,7 +2498,7 @@ function apiLogRetrospective(payload) {
     if (lock) {
       try { lock.releaseLock(); } catch (err) {}
     }
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -3013,7 +3036,7 @@ function apiPlanDayBudget(params) {
       areas
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -3120,7 +3143,7 @@ function apiCompareModes(params) {
       maintenance: sanitizeModeOutput(maintenancePlan, maintenanceDiag)
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -3543,7 +3566,7 @@ function apiStudyGuidePlanV2(params) {
     }
     return Object.assign({ ok: true }, plan);
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4076,7 +4099,7 @@ function apiStudyGuidePlan(params) {
     }
     return Object.assign({ ok: true }, plan);
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4137,7 +4160,7 @@ function apiStudyGuideCompareAlvos(params) {
       targets: limited
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4297,7 +4320,7 @@ function apiWeeklyPlan(params) {
       carryOver
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4332,8 +4355,8 @@ function debugSpaced() {
     
     return 'Ver logs';
   } catch (e) {
-    Logger.log('Erro: ' + e.toString());
-    return e.toString();
+    Logger.log('Erro: ' + errorToString(e));
+    return errorToString(e);
   }
 }
 
@@ -4478,7 +4501,7 @@ function apiGetDayDetails(dateISO) {
 
     return { ok: true, date: targetKeyDisplay, revisoes: formattedDetails };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4514,6 +4537,7 @@ function setReviewHojeStatus(alvo, feito) {
 
 function apiApplyReviewDone(payload) {
   try {
+    // Endpoint de conclusão de revisão protegido por try/catch para evitar respostas indefinidas.
     if (!payload || !payload.alvo) {
       return { ok: false, error: 'Alvo obrigatório.' };
     }
@@ -4579,7 +4603,7 @@ function apiApplyReviewDone(payload) {
     SpreadsheetApp.flush();
     return { ok: true, alvo, recomputeHint: true, marked };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4620,7 +4644,7 @@ function apiGetReviewCalendar(days) {
     
     return { ok: true, data: result };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4938,7 +4962,7 @@ function apiLogReviewOutcome(payload) {
       updated: ['REVISAO_LOG', 'LOG', 'MODEL', 'SPACED', 'REVER_HOJE']
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   } finally {
     SpreadsheetApp.flush();
     lock.releaseLock();
@@ -5127,7 +5151,7 @@ function apiRecompute() {
 
     return { ok: true, modelsUpdated: Object.keys(models).length };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   } finally {
     if (lock) {
       try {
@@ -5199,7 +5223,7 @@ function apiFitDoseResponse(alvoOrAll) {
 
     return { ok: true, results };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -5224,7 +5248,7 @@ function apiPredictGain(alvo, effortPlan) {
     const predicted = intercept + slope * effort;
     return { ok: true, alvo, effort, predictedGain: clamp(predicted, 0, 1), model: fit.result };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -5299,7 +5323,7 @@ function apiEstimateAttribution(window) {
 
     return { ok: true, updated: rows.length };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -5339,7 +5363,7 @@ function apiABAssign(uid) {
     const variant = hash % 2 === 0 ? 'classic' : 'evi';
     return { ok: true, uid, variant };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -5381,7 +5405,7 @@ function apiABLog(payload) {
 
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -5438,6 +5462,6 @@ function apiABReport() {
       }
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }

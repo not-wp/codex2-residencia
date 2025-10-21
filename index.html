@@ -2226,7 +2226,7 @@
                     <span id="policyEvi" class="policy-subtext">EVI médio: —</span>
                   </div>
                 </div>
-                <button class="btn btn-secondary" onclick="gerarFilaHoje()">🔄 Gerar lista</button>
+                <button id="btnRevisoesGerar" class="btn btn-secondary">🔄 Gerar lista</button>
               </div>
               <div class="review-summary">
                 <div class="summary-card" id="summaryPendencias">
@@ -2947,11 +2947,30 @@
     let dashboardAreaSelection = 'ALL';
     let dashboardWindowDays = 28;
     let dashboardAggMode = 'daily';
-    let googleChartsReady = false;
+    // ChartLoader singleton garante carregamento único do Google Charts.
+    window.ChartLoader = (function() {
+      let ready = null;
+      function ensure() {
+        if (ready) return ready;
+        ready = new Promise((resolve) => {
+          if (window.google && google.charts && google.visualization) {
+            resolve();
+            return;
+          }
+          google.charts.load('current', { packages: ['corechart', 'table'] });
+          google.charts.setOnLoadCallback(() => resolve());
+        });
+        return ready;
+      }
+      return { ensure };
+    })();
     let dashboardBarChart = null;
     let dashboardLineChart = null;
     let dashboardBarsRequestId = 0;
     let dashboardLineRequestId = 0;
+    let dashboardBarDataCache = { rows: [], title: 'Acertos por Área', area: 'ALL', emptyMessage: 'Sem dados disponíveis.' };
+    let dashboardLineDataCache = { series: [], title: 'Progressão Temporal', area: 'ALL', meta: { window: 28, agg: 'daily' }, emptyMessage: 'Sem dados suficientes para o período.' };
+    let overlayDepth = 0;
 
     const alvoSuggestionSet = new Set();
     const areaSuggestionSet = new Set();
@@ -2978,6 +2997,7 @@
     const dashAreaSelect = document.getElementById('dashAreaFilter');
     const dashWindowSelect = document.getElementById('dashWindow');
     const dashAggSelect = document.getElementById('dashAgg');
+    const btnRevisoesGerar = document.getElementById('btnRevisoesGerar');
 
     if (dashWindowSelect) {
       dashboardWindowDays = Number(dashWindowSelect.value) || dashboardWindowDays;
@@ -3023,6 +3043,12 @@
       });
     }
 
+    if (btnRevisoesGerar) {
+      btnRevisoesGerar.addEventListener('click', function() {
+        gerarFilaHoje();
+      });
+    }
+
     function getEffectiveDashboardArea(areaOverride) {
       const override = (typeof areaOverride === 'string' && areaOverride.length) ? areaOverride : null;
       const selectValue = dashAreaSelect && dashAreaSelect.value ? dashAreaSelect.value : '';
@@ -3047,6 +3073,14 @@
     function clampValue(value, min, max) {
       if (isNaN(value)) return min;
       return Math.min(max, Math.max(min, value));
+    }
+
+    function debounce(fn, wait) {
+      let timeoutId = null;
+      return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn.apply(this, args), wait);
+      };
     }
 
     const REVIEW_DONE_KEY = 'revisoesDone';
@@ -3130,6 +3164,81 @@
       document.getElementById('loadingOverlay').classList.toggle('active', show);
     }
 
+    function showOverlay() {
+      overlayDepth += 1;
+      setLoading(true);
+    }
+
+    function hideOverlay() {
+      overlayDepth = Math.max(0, overlayDepth - 1);
+      if (overlayDepth === 0) {
+        setLoading(false);
+      }
+    }
+
+    // Helper padrão para chamadas GAS com overlay e toasts.
+    function run(name, args, onOk, onError) {
+      if (!name) {
+        console.error('run: nome de função inválido.');
+        return;
+      }
+      let overlayEnabled = true;
+      let payload = args;
+      if (payload && typeof payload === 'object' && payload.__skipOverlay) {
+        overlayEnabled = false;
+        payload = Object.assign({}, payload);
+        delete payload.__skipOverlay;
+      }
+      if (payload === undefined || payload === null) {
+        payload = {};
+      }
+      if (overlayEnabled) {
+        showOverlay();
+      }
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (overlayEnabled) {
+            hideOverlay();
+          }
+          if (!res || res.ok === false) {
+            const errMsg = res && res.error ? res.error : 'erro desconhecido';
+            console.error(name, errMsg);
+            if (typeof onError === 'function') {
+              try {
+                onError(errMsg, res);
+              } catch (handlerErr) {
+                console.error('Erro no error handler de ' + name + ':', handlerErr);
+              }
+            } else {
+              toast('Falha: ' + errMsg, 'error');
+            }
+            return;
+          }
+          if (typeof onOk === 'function') {
+            try {
+              onOk(res);
+            } catch (callbackError) {
+              console.error('Erro no handler de ' + name + ':', callbackError);
+            }
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (overlayEnabled) {
+            hideOverlay();
+          }
+          console.error(name, err);
+          if (typeof onError === 'function') {
+            try {
+              onError(err);
+            } catch (handlerErr) {
+              console.error('Erro no error handler de ' + name + ':', handlerErr);
+            }
+          } else {
+            toast('Erro de comunicação com o servidor.', 'error');
+          }
+        })[name](payload || {});
+    }
+
     function toast(message, type = 'success') {
       const existing = document.querySelector('.toast');
       if (existing) existing.remove();
@@ -3166,6 +3275,7 @@
       }
 
       if (pageId === 'dashboard') {
+        redesenharGraficosDashboard();
         loadDashboard();
       }
       if (pageId === 'ajustes') {
@@ -4543,11 +4653,15 @@
     // ========================================================================
     window.onload = function() {
       setLoading(true);
-      google.charts.load('current', {'packages':['corechart','table']});
-      google.charts.setOnLoadCallback(function() {
-        googleChartsReady = true;
-        initApp();
-      });
+      ChartLoader.ensure()
+        .then(function() {
+          initApp();
+        })
+        .catch(function(err) {
+          console.error('Falha ao carregar Google Charts:', err);
+          toast('Não foi possível carregar os gráficos.', 'error');
+          setLoading(false);
+        });
     };
 
     function initApp() {
@@ -4644,28 +4758,25 @@
       exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Carregando gráfico...');
       exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Carregando gráfico...');
 
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (result && result.ok) {
-            dashboardAreas = Array.isArray(result.areas) ? result.areas : [];
-            dashboardAreaMap = result.map || {};
-          } else {
-            dashboardAreas = [];
-            dashboardAreaMap = {};
-            toast('Não foi possível carregar áreas para os filtros', 'warning');
-          }
-          populateDashboardAreaSelect();
-          atualizarGraficosDashboard(dashboardAreaSelection);
-        })
-        .withFailureHandler(function(error) {
-          console.error('Erro ao carregar áreas do dashboard:', error);
-          toast('Erro ao carregar filtros de áreas', 'error');
+      run('apiDashboardAreas', {}, function(result) {
+        if (result && result.ok) {
+          dashboardAreas = Array.isArray(result.areas) ? result.areas : [];
+          dashboardAreaMap = result.map || {};
+        } else {
           dashboardAreas = [];
           dashboardAreaMap = {};
-          populateDashboardAreaSelect();
-          atualizarGraficosDashboard(dashboardAreaSelection);
-        })
-        .apiDashboardAreas();
+          toast('Não foi possível carregar áreas para os filtros', 'warning');
+        }
+        populateDashboardAreaSelect();
+        atualizarGraficosDashboard(dashboardAreaSelection);
+      }, function(error) {
+        console.error('Erro ao carregar áreas do dashboard:', error);
+        toast('Erro ao carregar filtros de áreas', 'error');
+        dashboardAreas = [];
+        dashboardAreaMap = {};
+        populateDashboardAreaSelect();
+        atualizarGraficosDashboard(dashboardAreaSelection);
+      });
     }
 
     function populateDashboardAreaSelect() {
@@ -4699,123 +4810,41 @@
       atualizarGraficoLinhaDashboard(effectiveArea);
     }
 
-    function atualizarGraficoBarrasDashboard(areaOverride) {
-      if (!googleChartsReady) {
-        google.charts.setOnLoadCallback(function() {
-          atualizarGraficoBarrasDashboard(areaOverride);
-        });
-        return;
-      }
+    async function drawBars(dataRows, title, elId) {
+      await ChartLoader.ensure();
+      const el = document.getElementById(elId);
+      if (!el) return false;
 
-      const area = getEffectiveDashboardArea(areaOverride);
-      const requestId = ++dashboardBarsRequestId;
-      exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Atualizando gráfico...');
-
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (requestId !== dashboardBarsRequestId) return;
-
-          const titleEl = document.getElementById('chartBarsTitle');
-          const subtitleEl = document.getElementById('chartBarsSubtitle');
-          if (titleEl) titleEl.textContent = result && result.label ? result.label : 'Acertos por Área';
-          if (subtitleEl) {
-            subtitleEl.textContent = area === 'ALL'
-              ? 'Mostrando a taxa média de acertos por área.'
-              : `Mostrando subáreas da área ${area}.`;
-          }
-
-          if (result && result.ok && Array.isArray(result.data) && result.data.length) {
-            renderDashboardBarChart(result);
-          } else {
-            exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Sem dados disponíveis.');
-          }
-        })
-        .withFailureHandler(function(error) {
-          if (requestId !== dashboardBarsRequestId) return;
-          console.error('Erro ao carregar gráfico de barras:', error);
-          toast('Erro ao carregar gráfico de barras', 'error');
-          exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao carregar dados.');
-        })
-        .apiChartBars({ area });
-    }
-
-    function atualizarGraficoLinhaDashboard(areaOverride) {
-      if (!googleChartsReady) {
-        google.charts.setOnLoadCallback(function() {
-          atualizarGraficoLinhaDashboard(areaOverride);
-        });
-        return;
-      }
-
-      const area = getEffectiveDashboardArea(areaOverride);
-      const requestId = ++dashboardLineRequestId;
-      exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Atualizando gráfico...');
-
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (requestId !== dashboardLineRequestId) return;
-
-          const titleEl = document.getElementById('chartLineTitle');
-          const subtitleEl = document.getElementById('chartLineSubtitle');
-          if (titleEl) titleEl.textContent = result && result.label ? result.label : 'Progressão Temporal';
-          if (subtitleEl) {
-            const windowLabel = dashboardWindowDays + ' dias';
-            const aggLabel = dashboardAggMode === 'weekly' ? 'agregação semanal' : 'agregação diária';
-            subtitleEl.textContent = `Taxa de acerto (${windowLabel}, ${aggLabel}).`;
-          }
-
-          if (result && result.ok && Array.isArray(result.series) && result.series.length) {
-            renderDashboardLineChart(result);
-          } else {
-            exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Sem dados suficientes para o período.');
-          }
-        })
-        .withFailureHandler(function(error) {
-          if (requestId !== dashboardLineRequestId) return;
-          console.error('Erro ao carregar gráfico de linha:', error);
-          toast('Erro ao carregar gráfico de linha', 'error');
-          exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao carregar dados.');
-        })
-        .apiChartLine({ area, windowDays: dashboardWindowDays, agg: dashboardAggMode });
-    }
-
-    function renderDashboardBarChart(result) {
-      const chartEl = document.getElementById('chart_barras_area');
-      if (!chartEl || !googleChartsReady || !google || !google.visualization || !google.visualization.ColumnChart) {
-        exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Google Charts não disponível.');
-        return;
-      }
-
-      const percentFormatter = new Intl.NumberFormat('pt-BR', {
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1
+      const percentFormatter = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      const rows = [];
+      (Array.isArray(dataRows) ? dataRows : []).forEach(item => {
+        if (!item) return;
+        const label = item.label || '—';
+        const taxa = item.taxa !== undefined && item.taxa !== null ? Number(item.taxa) : NaN;
+        const pct = isFinite(taxa) ? Math.max(0, Math.min(100, taxa * 100)) : 0;
+        const acertos = item.acertos !== undefined && item.acertos !== null ? Number(item.acertos) : 0;
+        const questoes = item.questoes !== undefined && item.questoes !== null ? Number(item.questoes) : 0;
+        const annotation = `${percentFormatter.format(pct)}%`;
+        const tooltip = `<div style="padding:6px 8px;"><strong>${label}</strong><br>Acertos ${acertos} / ${questoes} (${annotation})</div>`;
+        rows.push([label, parseFloat(pct.toFixed(2)), annotation, tooltip]);
       });
+
+      if (!rows.length) {
+        return false;
+      }
 
       const dataTable = new google.visualization.DataTable();
-      dataTable.addColumn('string', 'Área');
-      dataTable.addColumn('number', 'Taxa de acerto (%)');
+      dataTable.addColumn('string', 'Categoria');
+      dataTable.addColumn('number', 'Taxa (%)');
       dataTable.addColumn({ type: 'string', role: 'annotation' });
       dataTable.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
-
-      (result.data || []).forEach(item => {
-        const label = item.label || '—';
-        const acertos = Number(item.acertos) || 0;
-        const questoes = Number(item.questoes) || 0;
-        const taxaPct = Math.max(0, Math.min(100, (Number(item.taxa) || 0) * 100));
-        const pctLabel = `${percentFormatter.format(taxaPct)}%`;
-        const tooltip = `
-          <div style="padding:6px 8px;">
-            <strong>${label}</strong><br>
-            Acertos ${acertos} / ${questoes} (${pctLabel})
-          </div>`;
-        dataTable.addRow([label, parseFloat(taxaPct.toFixed(2)), pctLabel, tooltip]);
-      });
+      dataTable.addRows(rows);
 
       const numberFormatter = new google.visualization.NumberFormat({ suffix: '%', fractionDigits: 1 });
       numberFormatter.format(dataTable, 1);
 
       const options = {
-        title: result.label || 'Acertos por Área',
+        title: title || 'Acertos por Área',
         backgroundColor: 'transparent',
         titleTextStyle: { color: '#f1f5f9', fontSize: 15 },
         legend: { position: 'none' },
@@ -4834,61 +4863,57 @@
         },
         tooltip: { isHtml: true, textStyle: { color: '#0f172a' }, ignoreBounds: true },
         annotations: {
-          textStyle: {
-            color: '#f8fafc',
-            fontSize: 12,
-            auraColor: 'rgba(15, 23, 42, 0.45)'
-          }
+          textStyle: { color: '#f8fafc', fontSize: 12, auraColor: 'transparent' },
+          alwaysOutside: true
         },
-        colors: ['#38bdf8'],
+        bar: { groupWidth: '60%' },
         chartArea: { width: '78%', height: '68%' }
       };
 
-      mostrarGrafico('chart_barras_area', 'chartBarsPlaceholder');
-      if (!dashboardBarChart) {
-        dashboardBarChart = new google.visualization.ColumnChart(chartEl);
-      }
+      dashboardBarChart = new google.visualization.ColumnChart(el);
       dashboardBarChart.draw(dataTable, options);
+      return true;
     }
 
-    function renderDashboardLineChart(result) {
-      const chartEl = document.getElementById('chart_linha_progresso');
-      if (!chartEl || !googleChartsReady || !google || !google.visualization || !google.visualization.LineChart) {
-        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Google Charts não disponível.');
-        return;
+    async function drawLine(series, title, elId) {
+      await ChartLoader.ensure();
+      const el = document.getElementById(elId);
+      if (!el) return false;
+
+      const safeSeries = Array.isArray(series) ? series : [];
+      if (!safeSeries.length) {
+        return false;
       }
 
-      const series = Array.isArray(result.series) ? result.series : [];
-      if (!series.length) {
-        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Sem dados suficientes para o período.');
-        return;
-      }
-
-      const dateKeys = new Set();
-      series.forEach(serie => {
-        (serie.points || []).forEach(point => {
+      const dateSet = new Set();
+      safeSeries.forEach(serie => {
+        (Array.isArray(serie.points) ? serie.points : []).forEach(point => {
           if (point && point.date) {
-            dateKeys.add(point.date);
+            dateSet.add(point.date);
           }
         });
       });
 
-      const sortedDates = Array.from(dateKeys).sort();
+      if (dateSet.size === 0) {
+        return false;
+      }
+
+      const sortedDates = Array.from(dateSet).sort();
       const dataTable = new google.visualization.DataTable();
       dataTable.addColumn('date', 'Data');
-      series.forEach(serie => {
-        dataTable.addColumn('number', serie.name || 'Série');
+      safeSeries.forEach(serie => {
+        dataTable.addColumn('number', serie && serie.name ? serie.name : 'Série');
       });
 
-      const dateToRow = sortedDates.map(dateKey => {
-        const parts = dateKey.split('-').map(Number);
+      const dateRows = sortedDates.map(dateStr => {
+        const parts = dateStr.split('-').map(Number);
         const dateObj = new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
         dateObj.setHours(0, 0, 0, 0);
         const row = [dateObj];
-        series.forEach(serie => {
-          const point = (serie.points || []).find(p => p.date === dateKey);
-          if (point && typeof point.taxa === 'number') {
-            const pct = Math.max(0, Math.min(100, point.taxa * 100));
+        safeSeries.forEach(serie => {
+          const point = (Array.isArray(serie.points) ? serie.points : []).find(p => p.date === dateStr);
+          if (point && point.taxa !== undefined && point.taxa !== null) {
+            const pct = Math.max(0, Math.min(100, Number(point.taxa) * 100));
             row.push(parseFloat(pct.toFixed(2)));
           } else {
             row.push(null);
@@ -4897,30 +4922,23 @@
         return row;
       });
 
-      if (!dateToRow.length) {
-        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Sem dados suficientes para o período.');
-        return;
-      }
-
-      dataTable.addRows(dateToRow);
+      dataTable.addRows(dateRows);
 
       const numberFormatter = new google.visualization.NumberFormat({ suffix: '%', fractionDigits: 1 });
       for (let col = 1; col < dataTable.getNumberOfColumns(); col++) {
         numberFormatter.format(dataTable, col);
       }
 
-      const palette = ['#f97316', '#38bdf8', '#22d3ee', '#a855f7', '#34d399', '#facc15', '#fb7185'];
+      const baseColors = ['#facc15', '#38bdf8', '#22d3ee', '#fb7185', '#a855f7', '#34d399', '#f97316'];
+      const colors = baseColors.slice(0, Math.max(1, safeSeries.length));
 
       const options = {
+        title: title || 'Progressão Temporal',
         backgroundColor: 'transparent',
-        title: result.label || 'Progressão Temporal',
         titleTextStyle: { color: '#f1f5f9', fontSize: 15 },
         legend: { position: 'top', textStyle: { color: '#cbd5e1' } },
         focusTarget: 'category',
-        hAxis: {
-          textStyle: { color: '#cbd5e1' },
-          format: 'dd/MM'
-        },
+        hAxis: { textStyle: { color: '#cbd5e1' }, format: 'dd/MM' },
         vAxis: {
           title: 'Taxa de acerto (%)',
           textStyle: { color: '#cbd5e1' },
@@ -4931,21 +4949,154 @@
           format: "#'%'",
           gridlines: { color: 'rgba(148, 163, 184, 0.2)' }
         },
-        tooltip: { textStyle: { color: '#0f172a' } },
-        curveType: 'function',
+        tooltip: { isHtml: false, textStyle: { color: '#0f172a' } },
         lineWidth: 3,
         pointSize: 5,
-        colors: palette.slice(0, dataTable.getNumberOfColumns() - 1),
+        colors,
         chartArea: { width: '78%', height: '68%' },
-        crosshair: { color: '#cbd5e1', trigger: 'both' }
+        crosshair: { color: '#f8fafc', trigger: 'both' }
       };
 
-      mostrarGrafico('chart_linha_progresso', 'chartLinePlaceholder');
-      if (!dashboardLineChart) {
-        dashboardLineChart = new google.visualization.LineChart(chartEl);
-      }
+      dashboardLineChart = new google.visualization.LineChart(el);
       dashboardLineChart.draw(dataTable, options);
+      return true;
     }
+
+    function atualizarGraficoBarrasDashboard(areaOverride) {
+      const area = getEffectiveDashboardArea(areaOverride);
+      const requestId = ++dashboardBarsRequestId;
+      exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Atualizando gráfico...');
+
+      run('apiChartBars', { area }, function(result) {
+        if (requestId !== dashboardBarsRequestId) return;
+
+        const titleText = result && result.label ? result.label : 'Acertos por Área';
+        const titleEl = document.getElementById('chartBarsTitle');
+        const subtitleEl = document.getElementById('chartBarsSubtitle');
+        if (titleEl) titleEl.textContent = titleText;
+        if (subtitleEl) {
+          subtitleEl.textContent = area === 'ALL'
+            ? 'Mostrando a taxa média de acertos por área.'
+            : `Mostrando subáreas da área ${area}.`;
+        }
+
+        const rows = result && Array.isArray(result.data) ? result.data : [];
+        dashboardBarDataCache = {
+          rows: rows.slice(),
+          title: titleText,
+          area,
+          emptyMessage: rows.length ? '' : 'Sem dados disponíveis.'
+        };
+
+        if (!rows.length) {
+          exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Sem dados disponíveis.');
+          return;
+        }
+
+        mostrarGrafico('chart_barras_area', 'chartBarsPlaceholder');
+        drawBars(rows, titleText, 'chart_barras_area').catch(function(err) {
+          console.error('Falha ao desenhar gráfico de barras:', err);
+          exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao desenhar gráfico.');
+        });
+      }, function(error) {
+        if (requestId !== dashboardBarsRequestId) return;
+        console.error('Erro ao carregar gráfico de barras:', error);
+        exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao carregar dados.');
+      });
+    }
+
+    function atualizarGraficoLinhaDashboard(areaOverride) {
+      const area = getEffectiveDashboardArea(areaOverride);
+      const requestId = ++dashboardLineRequestId;
+      exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Atualizando gráfico...');
+
+      run('apiChartLine', { area, windowDays: dashboardWindowDays, agg: dashboardAggMode }, function(result) {
+        if (requestId !== dashboardLineRequestId) return;
+
+        const titleText = result && result.label ? result.label : 'Progressão Temporal';
+        const titleEl = document.getElementById('chartLineTitle');
+        const subtitleEl = document.getElementById('chartLineSubtitle');
+        if (titleEl) titleEl.textContent = titleText;
+        if (subtitleEl) {
+          const windowLabel = dashboardWindowDays + ' dias';
+          const aggLabel = dashboardAggMode === 'weekly' ? 'agregação semanal' : 'agregação diária';
+          subtitleEl.textContent = `Taxa de acerto (${windowLabel}, ${aggLabel}).`;
+        }
+
+        const series = result && Array.isArray(result.series) ? result.series : [];
+        dashboardLineDataCache = {
+          series: series.map(serie => ({
+            name: serie && serie.name ? serie.name : '',
+            points: Array.isArray(serie && serie.points) ? serie.points.slice() : []
+          })),
+          title: titleText,
+          area,
+          meta: { window: dashboardWindowDays, agg: dashboardAggMode },
+          emptyMessage: series.length ? '' : 'Sem dados suficientes para o período.'
+        };
+
+        if (!series.length) {
+          exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Sem dados suficientes para o período.');
+          return;
+        }
+
+        mostrarGrafico('chart_linha_progresso', 'chartLinePlaceholder');
+        drawLine(series, titleText, 'chart_linha_progresso').catch(function(err) {
+          console.error('Falha ao desenhar gráfico de linha:', err);
+          exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao desenhar gráfico.');
+        });
+      }, function(error) {
+        if (requestId !== dashboardLineRequestId) return;
+        console.error('Erro ao carregar gráfico de linha:', error);
+        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao carregar dados.');
+      });
+    }
+
+    function redesenharGraficosDashboard() {
+      if (!isDashboardActive()) {
+        return;
+      }
+
+      if (dashboardBarDataCache.rows && dashboardBarDataCache.rows.length) {
+        const titleEl = document.getElementById('chartBarsTitle');
+        if (titleEl) titleEl.textContent = dashboardBarDataCache.title || 'Acertos por Área';
+        mostrarGrafico('chart_barras_area', 'chartBarsPlaceholder');
+        drawBars(dashboardBarDataCache.rows, dashboardBarDataCache.title, 'chart_barras_area').catch(function(err) {
+          console.error('Falha ao redesenhar barras:', err);
+          exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao desenhar gráfico.');
+        });
+      } else {
+        exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', dashboardBarDataCache.emptyMessage || 'Sem dados disponíveis.');
+      }
+
+      if (dashboardLineDataCache.series && dashboardLineDataCache.series.length) {
+        const titleEl = document.getElementById('chartLineTitle');
+        if (titleEl) titleEl.textContent = dashboardLineDataCache.title || 'Progressão Temporal';
+        mostrarGrafico('chart_linha_progresso', 'chartLinePlaceholder');
+        drawLine(dashboardLineDataCache.series, dashboardLineDataCache.title, 'chart_linha_progresso').catch(function(err) {
+          console.error('Falha ao redesenhar linha:', err);
+          exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao desenhar gráfico.');
+        });
+      } else {
+        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', dashboardLineDataCache.emptyMessage || 'Sem dados suficientes para o período.');
+      }
+    }
+
+    function isDashboardActive() {
+      const dashboardEl = document.getElementById('dashboard');
+      return dashboardEl && dashboardEl.classList.contains('active');
+    }
+
+    function exibirPlaceholderGrafico
+    document.addEventListener('DOMContentLoaded', function() {
+      redesenharGraficosDashboard();
+    });
+
+    window.addEventListener('hashchange', function() {
+      redesenharGraficosDashboard();
+    });
+
+    window.addEventListener('resize', debounce(redesenharGraficosDashboard, 200));
 
     function exibirPlaceholderGrafico(chartId, placeholderId, message) {
       const chartEl = document.getElementById(chartId);
@@ -4955,8 +5106,10 @@
         try {
           if (chartId === 'chart_barras_area' && dashboardBarChart && typeof dashboardBarChart.clearChart === 'function') {
             dashboardBarChart.clearChart();
+            dashboardBarChart = null;
           } else if (chartId === 'chart_linha_progresso' && dashboardLineChart && typeof dashboardLineChart.clearChart === 'function') {
             dashboardLineChart.clearChart();
+            dashboardLineChart = null;
           }
         } catch (err) {
           console.warn('Falha ao limpar gráfico antes do placeholder:', err);
@@ -5368,125 +5521,114 @@
         });
       }
 
-      let timeoutId = null;
-
-      if (!silent) {
-        setLoading(true);
-        timeoutId = setTimeout(function() {
-          setLoading(false);
-          toast('Tempo esgotado ao gerar lista. Tente novamente.', 'warning');
-            document.getElementById('filaBody').innerHTML =
-              '<tr><td colspan="7" class="empty-state">Erro ao carregar. Clique em "Gerar lista" novamente.</td></tr>';
-        }, 15000);
-      }
-
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (timeoutId) clearTimeout(timeoutId);
-          if (!silent) setLoading(false);
-
-          if (result && result.ok) {
-            const policyVersion = result.policyVersion || '';
-            const policyMode = policyVersion.indexOf('advanced') === 0 ? 'advanced' : 'classic';
-            const dateISO = result.date || new Date().toISOString().slice(0, 10);
-            currentReviewDate = dateISO;
-            reviewDoneState = loadReviewDoneState(dateISO);
-            const rawItems = Array.isArray(result.items) ? result.items : (Array.isArray(result.data) ? result.data : []);
-            const normalized = rawItems.map(normalizeQueueItem);
-
-            if (preservePlan) {
-              if (previousDone) {
-                normalized.forEach(item => {
-                  if (previousDone.has(item.alvo)) {
-                    const wasDone = previousDone.get(item.alvo);
-                    item.__done = wasDone;
-                    item.feito = wasDone ? 1 : '';
-                    if (currentReviewDate) {
-                      setReviewDoneLocal(currentReviewDate, item.alvo, wasDone);
-                    }
-                  }
-                });
-              }
-              reviewQueue = normalized;
-              const filteredPlan = new Map();
-              normalized.forEach(item => {
-                if (previousPlan && previousPlan.has(item.alvo)) {
-                  filteredPlan.set(item.alvo, previousPlan.get(item.alvo));
-                }
-              });
-              plannerAllocations = filteredPlan;
-              const aggregates = summarizePlannerAllocations(plannerAllocations);
-              plannerAreas = aggregates.areas;
-              const prevBudget = previousSummary && previousSummary.budget !== undefined
-                ? previousSummary.budget
-                : (Number(result.budgetMin) || 0);
-              const rawAlloc = aggregates.totalAlloc;
-              const rawDelta = aggregates.totalDelta;
-              const totalAlloc = Number.isFinite(rawAlloc) ? Math.round(rawAlloc) : 0;
-              const totalDelta = Number.isFinite(rawDelta) ? Math.round(rawDelta * 10) / 10 : 0;
-              const safeDelta = totalDelta < 0 ? 0 : totalDelta;
-              plannerSummary = {
-                budget: prevBudget,
-                allocated: totalAlloc,
-                delta: safeDelta,
-                mode: policyMode
-              };
-            } else {
-              reviewQueue = normalized;
-              resetPlannerState(false);
-              plannerSummary.mode = policyMode;
-              retrospectiveSnapshot = null;
-              updateRetrospectivaResumo(null);
-            }
-
-            renderFilaRevisoes(reviewQueue);
-            addSuggestionsFromQueue(reviewQueue);
-
-            const count = result.count || 0;
-            document.getElementById('kpiRevisoesHoje').textContent = count;
-
-            const eviInfoEl = document.getElementById('policyEvi');
-            if (eviInfoEl) {
-              const eviValues = (reviewQueue || [])
-                .map(item => (item.eviPerMin !== undefined && item.eviPerMin !== null ? Number(item.eviPerMin) : NaN))
-                .filter(val => !isNaN(val));
-              if (eviValues.length > 0) {
-                const avgEvi = eviValues.reduce((sum, val) => sum + val, 0) / eviValues.length;
-                eviInfoEl.textContent = `EVI médio: ${avgEvi.toFixed(3)}`;
-              } else {
-                eviInfoEl.textContent = 'EVI médio: —';
-              }
-            }
-
-            updatePlannerSummaryUI();
-
-            if (!silent) {
-              if (count === 0) {
-                toast('✓ Nenhuma revisão vencida hoje. Próximas revisões em breve!', 'success');
-              } else {
-                toast(`✓ ${count} revisão(ões) encontrada(s)`, 'success');
-              }
-            }
-          } else if (!silent) {
-            toast('Erro: ' + (result ? result.error : 'Sem resposta'), 'error');
-            document.getElementById('filaBody').innerHTML =
-              '<tr><td colspan="7" class="empty-state">Erro ao gerar lista.</td></tr>';
-          }
-        })
-        .withFailureHandler(function(error) {
-          if (timeoutId) clearTimeout(timeoutId);
+      const requestArgs = silent ? { __skipOverlay: true } : {};
+      run('apiMakeReviewToday', requestArgs, function(result) {
+        if (!result) {
           if (!silent) {
-            setLoading(false);
-            toast('Erro: ' + error.message, 'error');
-            document.getElementById('filaBody').innerHTML =
-              '<tr><td colspan="7" class="empty-state">Erro de conexão.</td></tr>';
-          } else {
-            console.warn('Erro ao gerar fila:', error);
+            toast('Erro: resposta vazia do servidor.', 'error');
           }
-        })
-        .apiMakeReviewToday();
-    }
+          return;
+        }
 
+        const policyVersion = result.policyVersion || '';
+        const policyMode = policyVersion.indexOf('advanced') === 0 ? 'advanced' : 'classic';
+        const dateISO = result.date || new Date().toISOString().slice(0, 10);
+        currentReviewDate = dateISO;
+        reviewDoneState = loadReviewDoneState(dateISO);
+        const rawItems = Array.isArray(result.items) ? result.items : (Array.isArray(result.data) ? result.data : []);
+        const normalized = rawItems.map(normalizeQueueItem);
+
+        if (preservePlan) {
+          if (previousDone) {
+            normalized.forEach(item => {
+              if (previousDone.has(item.alvo)) {
+                const wasDone = previousDone.get(item.alvo);
+                item.__done = wasDone;
+                item.feito = wasDone ? 1 : '';
+                if (currentReviewDate) {
+                  setReviewDoneLocal(currentReviewDate, item.alvo, wasDone);
+                }
+              }
+            });
+          }
+          reviewQueue = normalized;
+          const filteredPlan = new Map();
+          normalized.forEach(item => {
+            if (previousPlan && previousPlan.has(item.alvo)) {
+              filteredPlan.set(item.alvo, previousPlan.get(item.alvo));
+            }
+          });
+          plannerAllocations = filteredPlan;
+          const aggregates = summarizePlannerAllocations(plannerAllocations);
+          plannerAreas = aggregates.areas;
+          const prevBudget = previousSummary && previousSummary.budget !== undefined
+            ? previousSummary.budget
+            : (Number(result.budgetMin) || 0);
+          const rawAlloc = aggregates.totalAlloc;
+          const rawDelta = aggregates.totalDelta;
+          const totalAlloc = Number.isFinite(rawAlloc) ? Math.round(rawAlloc) : 0;
+          const totalDelta = Number.isFinite(rawDelta) ? Math.round(rawDelta * 10) / 10 : 0;
+          const safeDelta = totalDelta < 0 ? 0 : totalDelta;
+          plannerSummary = {
+            budget: prevBudget,
+            allocated: totalAlloc,
+            delta: safeDelta,
+            mode: policyMode
+          };
+        } else {
+          reviewQueue = normalized;
+          resetPlannerState(false);
+          plannerSummary.mode = policyMode;
+          retrospectiveSnapshot = null;
+          updateRetrospectivaResumo(null);
+        }
+
+        renderFilaRevisoes(reviewQueue);
+        addSuggestionsFromQueue(reviewQueue);
+
+        const count = result.count || reviewQueue.length || 0;
+        const kpiEl = document.getElementById('kpiRevisoesHoje');
+        if (kpiEl) {
+          kpiEl.textContent = count;
+        }
+
+        const eviInfoEl = document.getElementById('policyEvi');
+        if (eviInfoEl) {
+          const eviValues = (reviewQueue || [])
+            .map(item => (item.eviPerMin !== undefined && item.eviPerMin !== null ? Number(item.eviPerMin) : NaN))
+            .filter(val => !isNaN(val));
+          if (eviValues.length > 0) {
+            const avgEvi = eviValues.reduce((sum, val) => sum + val, 0) / eviValues.length;
+            eviInfoEl.textContent = `EVI médio: ${avgEvi.toFixed(3)}`;
+          } else {
+            eviInfoEl.textContent = 'EVI médio: —';
+          }
+        }
+
+        updatePlannerSummaryUI();
+
+        if (!silent) {
+          if (count === 0) {
+            toast('✓ Nenhuma revisão vencida hoje. Próximas revisões em breve!', 'success');
+          } else {
+            toast(`✓ ${count} revisão(ões) encontrada(s)`, 'success');
+          }
+        }
+      }, function(error) {
+        if (silent) {
+          console.warn('Erro ao gerar fila:', error);
+          return;
+        }
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Erro: ' + message, 'error');
+        const body = document.getElementById('filaBody');
+        if (body) {
+          body.innerHTML = '<tr><td colspan="7" class="empty-state">Erro ao gerar lista.</td></tr>';
+        }
+      });
+    }
     function calcularPlano() {
       const enabled = toBool((currentSettings || {}).useBanditPlanner);
       if (!enabled) {
@@ -5859,6 +6001,35 @@
       return item;
     }
 
+    function concluirAlvo(payload, options = {}) {
+      const request = Object.assign({}, payload || {});
+      if (options.skipOverlay) {
+        request.__skipOverlay = true;
+      }
+      run('apiApplyReviewDone', request, function(res) {
+        if (typeof options.onSuccess === 'function') {
+          try {
+            options.onSuccess(res);
+          } catch (handlerErr) {
+            console.error('Erro no sucesso de concluirAlvo:', handlerErr);
+          }
+        }
+      }, function(error) {
+        if (typeof options.onError === 'function') {
+          try {
+            options.onError(error);
+            return;
+          } catch (handlerErr) {
+            console.error('Erro no error handler de concluirAlvo:', handlerErr);
+          }
+        }
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Erro ao aplicar revisão: ' + message, 'error');
+      });
+    }
+
     function renderFilaRevisoes(queue) {
       const tbody = document.getElementById('filaBody');
       if (!tbody) return;
@@ -6080,60 +6251,52 @@
         subarea
       };
 
-      setLoading(true);
-      google.script.run
-        .withSuccessHandler(function(result) {
-          setLoading(false);
-          if (result && result.ok) {
-            toast('Revisão registrada!', 'success');
-            setReviewDoneLocal(currentReviewDate, alvo, true);
-            reviewQueue.forEach(item => {
-              if (item && item.alvo === alvo) {
-                item.__done = true;
-                item.feito = 1;
-              }
-            });
-            renderFilaRevisoes(reviewQueue);
-            updatePlannerSummaryUI();
-            fecharReviewModal();
-          } else {
-            toast('Erro ao registrar revisão: ' + (result && result.error ? result.error : 'desconhecido'), 'error');
-          }
-        })
-        .withFailureHandler(function(error) {
-          setLoading(false);
-          toast('Erro ao registrar revisão: ' + error.message, 'error');
-        })
-        .apiApplyReviewDone(payload);
+      concluirAlvo(payload, {
+        onSuccess: function() {
+          toast('Revisão registrada!', 'success');
+          setReviewDoneLocal(currentReviewDate, alvo, true);
+          reviewQueue.forEach(item => {
+            if (item && item.alvo === alvo) {
+              item.__done = true;
+              item.feito = 1;
+            }
+          });
+          renderFilaRevisoes(reviewQueue);
+          updatePlannerSummaryUI();
+          fecharReviewModal();
+        },
+        onError: function(error) {
+          const message = typeof error === 'string'
+            ? error
+            : (error && error.message ? error.message : 'desconhecido');
+          toast('Erro ao registrar revisão: ' + message, 'error');
+        }
+      });
     }
 
     function desfazerRevisao(item) {
       const alvo = typeof item === 'string' ? item : (item ? item.alvo : '');
       if (!alvo) return;
-      setLoading(true);
-      google.script.run
-        .withSuccessHandler(function(result) {
-          setLoading(false);
-          if (result && result.ok) {
-            setReviewDoneLocal(currentReviewDate, alvo, false);
-            reviewQueue.forEach(entry => {
-              if (entry && entry.alvo === alvo) {
-                entry.__done = false;
-                entry.feito = '';
-              }
-            });
-            renderFilaRevisoes(reviewQueue);
-            updatePlannerSummaryUI();
-            toast(`Revisão de ${alvo} marcada como pendente.`, 'info');
-          } else {
-            toast('Erro ao desfazer: ' + (result && result.error ? result.error : 'desconhecido'), 'error');
-          }
-        })
-        .withFailureHandler(function(error) {
-          setLoading(false);
-          toast('Erro ao desfazer: ' + error.message, 'error');
-        })
-        .apiApplyReviewDone({ alvo, undo: true });
+      concluirAlvo({ alvo, undo: true }, {
+        onSuccess: function() {
+          setReviewDoneLocal(currentReviewDate, alvo, false);
+          reviewQueue.forEach(entry => {
+            if (entry && entry.alvo === alvo) {
+              entry.__done = false;
+              entry.feito = '';
+            }
+          });
+          renderFilaRevisoes(reviewQueue);
+          updatePlannerSummaryUI();
+          toast(`Revisão de ${alvo} marcada como pendente.`, 'info');
+        },
+        onError: function(error) {
+          const message = typeof error === 'string'
+            ? error
+            : (error && error.message ? error.message : 'desconhecido');
+          toast('Erro ao desfazer: ' + message, 'error');
+        }
+      });
     }
 
     function verCalendarioRevisoes() {
@@ -6190,29 +6353,42 @@
         areaMap.set(area, (areaMap.get(area) || 0) + 1);
       });
 
-      if (!(window.google && google.visualization && google.visualization.PieChart)) {
-        chartEl.style.display = 'none';
-        placeholder.style.display = 'flex';
-        placeholder.textContent = 'Gráfico indisponível.';
-        return;
-      }
+      chartEl.style.display = 'none';
+      placeholder.style.display = 'flex';
+      placeholder.textContent = 'Carregando gráfico...';
 
-      const dataArray = [['Área', 'Itens']];
-      areaMap.forEach((count, area) => {
-        dataArray.push([area, count]);
-      });
+      ChartLoader.ensure()
+        .then(function() {
+          if (!(window.google && google.visualization && google.visualization.PieChart)) {
+            chartEl.style.display = 'none';
+            placeholder.style.display = 'flex';
+            placeholder.textContent = 'Gráfico indisponível.';
+            return;
+          }
 
-      const dataTable = google.visualization.arrayToDataTable(dataArray);
-      const options = {
-        backgroundColor: 'transparent',
-        legend: { textStyle: { color: '#cbd5e1' } },
-        pieHole: 0.4,
-        chartArea: { width: '90%', height: '80%' }
-      };
-      const chart = new google.visualization.PieChart(chartEl);
-      chart.draw(dataTable, options);
-      chartEl.style.display = 'block';
-      placeholder.style.display = 'none';
+          const dataArray = [['Área', 'Itens']];
+          areaMap.forEach((count, area) => {
+            dataArray.push([area, count]);
+          });
+
+          const dataTable = google.visualization.arrayToDataTable(dataArray);
+          const options = {
+            backgroundColor: 'transparent',
+            legend: { textStyle: { color: '#cbd5e1' } },
+            pieHole: 0.4,
+            chartArea: { width: '90%', height: '80%' }
+          };
+          const chart = new google.visualization.PieChart(chartEl);
+          chart.draw(dataTable, options);
+          chartEl.style.display = 'block';
+          placeholder.style.display = 'none';
+        })
+        .catch(function(err) {
+          console.error('Falha ao renderizar distribuição de revisões:', err);
+          chartEl.style.display = 'none';
+          placeholder.style.display = 'flex';
+          placeholder.textContent = 'Gráfico indisponível.';
+        });
     }
 
     function salvarRevisao() {
