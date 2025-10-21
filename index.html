@@ -3005,7 +3005,6 @@
     if (dashAreaSelect) {
       dashAreaSelect.addEventListener('change', function() {
         const selected = this.value || 'ALL';
-        dashboardAreaSelection = selected;
         atualizarGraficosDashboard(selected);
       });
     }
@@ -3013,15 +3012,32 @@
     if (dashWindowSelect) {
       dashWindowSelect.addEventListener('change', function() {
         dashboardWindowDays = Number(this.value) || 28;
-        atualizarGraficoLinhaDashboard(dashboardAreaSelection);
+        atualizarGraficoLinhaDashboard();
       });
     }
 
     if (dashAggSelect) {
       dashAggSelect.addEventListener('change', function() {
         dashboardAggMode = (this.value || 'daily');
-        atualizarGraficoLinhaDashboard(dashboardAreaSelection);
+        atualizarGraficoLinhaDashboard();
       });
+    }
+
+    function getEffectiveDashboardArea(areaOverride) {
+      const override = (typeof areaOverride === 'string' && areaOverride.length) ? areaOverride : null;
+      const selectValue = dashAreaSelect && dashAreaSelect.value ? dashAreaSelect.value : '';
+      let resolved = override || selectValue || dashboardAreaSelection || 'ALL';
+      resolved = String(resolved || '').trim();
+      if (!resolved) {
+        resolved = 'ALL';
+      } else if (resolved.toUpperCase() === 'ALL') {
+        resolved = 'ALL';
+      }
+      dashboardAreaSelection = resolved;
+      if (dashAreaSelect && dashAreaSelect.value !== resolved) {
+        dashAreaSelect.value = resolved;
+      }
+      return resolved;
     }
 
     function toBool(value) {
@@ -4669,18 +4685,18 @@
         dashAreaSelect.appendChild(opt);
       });
 
+      let resolved = 'ALL';
       if (previous === 'ALL' || dashboardAreas.includes(previous)) {
-        dashAreaSelect.value = previous;
-        dashboardAreaSelection = previous;
-      } else {
-        dashAreaSelect.value = 'ALL';
-        dashboardAreaSelection = 'ALL';
+        resolved = previous;
       }
+      dashAreaSelect.value = resolved;
+      dashboardAreaSelection = resolved;
     }
 
     function atualizarGraficosDashboard(areaOverride) {
-      atualizarGraficoBarrasDashboard(areaOverride);
-      atualizarGraficoLinhaDashboard(areaOverride);
+      const effectiveArea = getEffectiveDashboardArea(areaOverride);
+      atualizarGraficoBarrasDashboard(effectiveArea);
+      atualizarGraficoLinhaDashboard(effectiveArea);
     }
 
     function atualizarGraficoBarrasDashboard(areaOverride) {
@@ -4691,13 +4707,7 @@
         return;
       }
 
-      const selectArea = dashAreaSelect && dashAreaSelect.value ? dashAreaSelect.value : dashboardAreaSelection;
-      const effectiveArea = typeof areaOverride === 'string' && areaOverride.length ? areaOverride : (selectArea || 'ALL');
-      dashboardAreaSelection = effectiveArea || 'ALL';
-      if (dashAreaSelect && dashAreaSelect.value !== dashboardAreaSelection) {
-        dashAreaSelect.value = dashboardAreaSelection;
-      }
-
+      const area = getEffectiveDashboardArea(areaOverride);
       const requestId = ++dashboardBarsRequestId;
       exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Atualizando gráfico...');
 
@@ -4709,9 +4719,9 @@
           const subtitleEl = document.getElementById('chartBarsSubtitle');
           if (titleEl) titleEl.textContent = result && result.label ? result.label : 'Acertos por Área';
           if (subtitleEl) {
-            subtitleEl.textContent = dashboardAreaSelection === 'ALL'
+            subtitleEl.textContent = area === 'ALL'
               ? 'Mostrando a taxa média de acertos por área.'
-              : `Mostrando subáreas da área ${dashboardAreaSelection}.`;
+              : `Mostrando subáreas da área ${area}.`;
           }
 
           if (result && result.ok && Array.isArray(result.data) && result.data.length) {
@@ -4726,7 +4736,7 @@
           toast('Erro ao carregar gráfico de barras', 'error');
           exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao carregar dados.');
         })
-        .apiChartBars({ area: dashboardAreaSelection });
+        .apiChartBars({ area });
     }
 
     function atualizarGraficoLinhaDashboard(areaOverride) {
@@ -4737,13 +4747,7 @@
         return;
       }
 
-      const selectArea = dashAreaSelect && dashAreaSelect.value ? dashAreaSelect.value : dashboardAreaSelection;
-      const effectiveArea = typeof areaOverride === 'string' && areaOverride.length ? areaOverride : (selectArea || 'ALL');
-      dashboardAreaSelection = effectiveArea || 'ALL';
-      if (dashAreaSelect && dashAreaSelect.value !== dashboardAreaSelection) {
-        dashAreaSelect.value = dashboardAreaSelection;
-      }
-
+      const area = getEffectiveDashboardArea(areaOverride);
       const requestId = ++dashboardLineRequestId;
       exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Atualizando gráfico...');
 
@@ -4772,7 +4776,7 @@
           toast('Erro ao carregar gráfico de linha', 'error');
           exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao carregar dados.');
         })
-        .apiChartLine({ area: dashboardAreaSelection, windowDays: dashboardWindowDays, agg: dashboardAggMode });
+        .apiChartLine({ area, windowDays: dashboardWindowDays, agg: dashboardAggMode });
     }
 
     function renderDashboardBarChart(result) {
@@ -4948,9 +4952,16 @@
       const placeholderEl = document.getElementById(placeholderId);
       if (chartEl) {
         chartEl.style.display = 'none';
-        if (chartEl.innerHTML) {
-          chartEl.innerHTML = '';
+        try {
+          if (chartId === 'chart_barras_area' && dashboardBarChart && typeof dashboardBarChart.clearChart === 'function') {
+            dashboardBarChart.clearChart();
+          } else if (chartId === 'chart_linha_progresso' && dashboardLineChart && typeof dashboardLineChart.clearChart === 'function') {
+            dashboardLineChart.clearChart();
+          }
+        } catch (err) {
+          console.warn('Falha ao limpar gráfico antes do placeholder:', err);
         }
+        chartEl.innerHTML = '';
       }
       if (placeholderEl) {
         placeholderEl.style.display = 'flex';
