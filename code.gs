@@ -234,6 +234,15 @@ function errorToString(err) {
   }
 }
 
+// Normaliza valores numéricos enviados à UI evitando NaN/Infinity.
+function toFiniteOrNull(value, fallback = null) {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const num = Number(value);
+  return isFinite(num) ? num : fallback;
+}
+
 function clearWeibullCache(area) {
   if (area) {
     delete weibullShapeCache[area];
@@ -443,8 +452,9 @@ function formatDateISO(date) {
 // ============================================================================
 
 function apiInit() {
+  let lock = null;
   try {
-    const lock = LockService.getScriptLock();
+    lock = LockService.getScriptLock();
     lock.tryLock(10000);
     
     // Criar todas as abas com headers
@@ -462,10 +472,17 @@ function apiInit() {
       SpreadsheetApp.flush();
     }
     
-    lock.releaseLock();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorToString(e) };
+  } finally {
+    if (lock) {
+      try {
+        lock.releaseLock();
+      } catch (err) {
+        // ignore release errors
+      }
+    }
   }
 }
 
@@ -504,8 +521,9 @@ function apiGetSettings() {
 }
 
 function apiSaveSettings(obj) {
+  let lock = null;
   try {
-    const lock = LockService.getScriptLock();
+    lock = LockService.getScriptLock();
     lock.tryLock(10000);
     
     const sheet = getOrCreateSheet(SHEET_NAMES.SETTINGS, HEADERS.SETTINGS);
@@ -566,11 +584,18 @@ function apiSaveSettings(obj) {
     }
     
     SpreadsheetApp.flush();
-    lock.releaseLock();
-    
+
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorToString(e) };
+  } finally {
+    if (lock) {
+      try {
+        lock.releaseLock();
+      } catch (err) {
+        // ignore release errors
+      }
+    }
   }
 }
 
@@ -656,15 +681,15 @@ function testLogBlock() {
 // ============================================================================
 
 function apiProcessLogInternal() {
+  let lock = null;
   try {
-    const lock = LockService.getScriptLock();
+    lock = LockService.getScriptLock();
     lock.tryLock(30000);
     
     const logData = readSheetData(SHEET_NAMES.LOG);
     const settings = apiGetSettings();
     
     if (logData.length === 0) {
-      lock.releaseLock();
       return { ok: true, message: 'Nenhum dado no LOG para processar' };
     }
     
@@ -835,16 +860,23 @@ function apiProcessLogInternal() {
     });
     
     SpreadsheetApp.flush();
-    lock.releaseLock();
-    
-    return { 
-      ok: true, 
+
+    return {
+      ok: true,
       alvosProcessados: Object.keys(statsMap).length,
       message: `${Object.keys(statsMap).length} alvos processados com sucesso`
     };
   } catch (e) {
     Logger.log('Erro em apiProcessLog: ' + errorToString(e));
     return { ok: false, error: errorToString(e) };
+  } finally {
+    if (lock) {
+      try {
+        lock.releaseLock();
+      } catch (err) {
+        // ignore release errors
+      }
+    }
   }
 }
 
@@ -2287,14 +2319,18 @@ function apiMakeReviewToday() {
     SpreadsheetApp.flush();
 
     if (policyEntries.length > 0) {
-      appendPolicyLogEntries(policyEntries);
+      try {
+        appendPolicyLogEntries(policyEntries);
+      } catch (logErr) {
+        Logger.log('appendPolicyLogEntries error: ' + errorToString(logErr));
+      }
     }
 
     const caps = {
-      Smin: isFinite(settings.Smin) ? Number(settings.Smin) : DEFAULT_SETTINGS.Smin,
-      Smax: isFinite(settings.Smax) ? Number(settings.Smax) : DEFAULT_SETTINGS.Smax,
-      Imin: isFinite(settings.Imin) ? Number(settings.Imin) : DEFAULT_SETTINGS.Imin,
-      Imax: isFinite(settings.Imax) ? Number(settings.Imax) : DEFAULT_SETTINGS.Imax
+      Smin: toFiniteOrNull(settings.Smin, DEFAULT_SETTINGS.Smin),
+      Smax: toFiniteOrNull(settings.Smax, DEFAULT_SETTINGS.Smax),
+      Imin: toFiniteOrNull(settings.Imin, DEFAULT_SETTINGS.Imin),
+      Imax: toFiniteOrNull(settings.Imax, DEFAULT_SETTINGS.Imax)
     };
 
     // Fórmula base: prioridade ≈ (1 − R(t)) + overdue + custos, com ajustes quando o modo avançado está ativo.
@@ -2308,56 +2344,73 @@ function apiMakeReviewToday() {
       const alvoParts = (context.area || context.subarea)
         ? { area: context.area, subarea: context.subarea }
         : parseAlvoParts(item.alvo || '');
-      const tempoPrevSeg = context.tempoPrevSeg !== undefined
-        ? context.tempoPrevSeg
-        : (components.costMinutes !== undefined && components.costMinutes !== null
-          ? components.costMinutes * 60
-          : null);
-      const tempoPrevMin = tempoPrevSeg !== null && tempoPrevSeg !== undefined
-        ? tempoPrevSeg / 60
-        : (components.costMinutes !== undefined ? components.costMinutes : null);
 
-      const estabilidadeCtx = context.S !== undefined ? Number(context.S) : Number(item.estabilidade);
-      const baseRecall = context.baseRecall !== undefined ? Number(context.baseRecall) : null;
-      const recallHoje = baseRecall !== null && baseRecall !== undefined ? clamp(1 - baseRecall, 0, 1) : null;
-      let overdueValue = components.overdue !== undefined ? Number(components.overdue) : null;
-      if (overdueValue === null || isNaN(overdueValue)) {
-        if (context.overdueValue !== undefined) {
-          overdueValue = Number(context.overdueValue);
-        } else if (context.overdueRaw !== undefined) {
-          overdueValue = Number(context.overdueRaw);
-        }
-      }
-      const tempoEstimado = tempoPrevMin !== null && tempoPrevMin !== undefined
-        ? Number(tempoPrevMin)
+      const tempoPrevSeg = context.tempoPrevSeg !== undefined
+        ? Number(context.tempoPrevSeg)
+        : (components.costMinutes !== undefined && components.costMinutes !== null
+          ? Number(components.costMinutes) * 60
+          : null);
+      const tempoPrevMinRaw = tempoPrevSeg !== null && tempoPrevSeg !== undefined
+        ? tempoPrevSeg / 60
         : (components.costMinutes !== undefined ? Number(components.costMinutes) : null);
 
+      const estabilidadeSheet = toFiniteOrNull(item.estabilidade, null);
+      const estabilidadeCtx = context.S !== undefined ? Number(context.S) : Number(estabilidadeSheet);
+      const baseRecall = context.baseRecall !== undefined ? Number(context.baseRecall) : null;
+      const recallHojeRaw = baseRecall !== null && baseRecall !== undefined ? clamp(1 - baseRecall, 0, 1) : null;
+
+      let overdueRaw = components.overdue !== undefined ? Number(components.overdue) : null;
+      if (overdueRaw === null || isNaN(overdueRaw)) {
+        if (context.overdueValue !== undefined) {
+          overdueRaw = Number(context.overdueValue);
+        } else if (context.overdueRaw !== undefined) {
+          overdueRaw = Number(context.overdueRaw);
+        }
+      }
+
+      const tempoEstimadoRaw = tempoPrevMinRaw !== null && tempoPrevMinRaw !== undefined
+        ? tempoPrevMinRaw
+        : (components.costMinutes !== undefined ? Number(components.costMinutes) : null);
+
+      const prioridadeVal = toFiniteOrNull(item.prioridade, 0);
+      const proximaRevisaoStr = item.proximaRevisao ? formatDateDDMMYYYY(item.proximaRevisao) : '';
+      const estabilidadeSafe = toFiniteOrNull(estabilidadeCtx, estabilidadeSheet);
+      const recallHojeSafe = toFiniteOrNull(recallHojeRaw, null);
+      const overdueSafe = toFiniteOrNull(overdueRaw, null);
+      const tempoPrevMinSafe = toFiniteOrNull(tempoPrevMinRaw, null);
+      const tempoEstSafe = toFiniteOrNull(tempoEstimadoRaw, null);
+      const pegSafe = toFiniteOrNull(context.peg, null);
+      const tempoRelSafe = toFiniteOrNull(context.tempoRel, null);
+      const difNormSafe = toFiniteOrNull(context.difNorm, null);
+      const atrasoDiasSafe = toFiniteOrNull(context.atrasoDias, null);
+      const baseRecallSafe = toFiniteOrNull(baseRecall, null);
+
       return {
-        alvo: item.alvo,
-        prioridade: item.prioridade,
-        proximaRevisao: formatDateDDMMYYYY(item.proximaRevisao),
-        estabilidade: item.estabilidade,
-        feito: item.feito || '',
-        eviPerMin: components.eviPerMin !== undefined ? components.eviPerMin : null,
-        eviPerMinMean: components.eviPerMinMean !== undefined ? components.eviPerMinMean : null,
-        eviTotal: components.eviTotalLCB !== undefined ? components.eviTotalLCB : null,
-        custos: components.custos !== undefined ? components.custos : null,
-        overdue: isFinite(overdueValue) ? overdueValue : null,
-        diversity: components.diversity !== undefined ? components.diversity : null,
-        costMinutes: components.costMinutes !== undefined ? components.costMinutes : null,
-        diagnostics: diag,
-        atrasoDias: context.atrasoDias !== undefined ? context.atrasoDias : null,
-        tempoPrevMin: tempoPrevMin,
-        baseRecall: baseRecall,
+        alvo: item.alvo || '',
         area: alvoParts.area || '',
         subarea: alvoParts.subarea || '',
-        S: isFinite(estabilidadeCtx) ? estabilidadeCtx : null,
-        Rhoje: recallHoje !== null && recallHoje !== undefined ? recallHoje : null,
-        tempoEstMin: tempoEstimado !== null && isFinite(tempoEstimado) ? tempoEstimado : null,
-        peg: context.peg !== undefined ? context.peg : null,
-        tempo_rel: context.tempoRel !== undefined ? context.tempoRel : null,
-        dif_norm: context.difNorm !== undefined ? context.difNorm : null,
-        caps: caps
+        prioridade: prioridadeVal,
+        proximaRevisao: proximaRevisaoStr,
+        estabilidade: estabilidadeSheet,
+        feito: item.feito || '',
+        eviPerMin: toFiniteOrNull(components.eviPerMin, null),
+        eviPerMinMean: toFiniteOrNull(components.eviPerMinMean, null),
+        eviTotal: toFiniteOrNull(components.eviTotalLCB, null),
+        custos: toFiniteOrNull(components.custos, null),
+        overdue: overdueSafe,
+        diversity: toFiniteOrNull(components.diversity, null),
+        costMinutes: toFiniteOrNull(components.costMinutes, null),
+        diagnostics: diag,
+        atrasoDias: atrasoDiasSafe,
+        tempoPrevMin: tempoPrevMinSafe,
+        baseRecall: baseRecallSafe,
+        S: estabilidadeSafe,
+        Rhoje: recallHojeSafe,
+        tempoEstMin: tempoEstSafe,
+        peg: pegSafe,
+        tempo_rel: tempoRelSafe,
+        dif_norm: difNormSafe,
+        caps: Object.assign({}, caps)
       };
     });
 
@@ -2368,7 +2421,12 @@ function apiMakeReviewToday() {
       items: responseList,
       data: responseList,
       policyVersion,
-      bandit: banditResult ? { budget: banditResult.budget, totalCost: banditResult.totalCost } : null
+      bandit: banditResult
+        ? {
+            budget: toFiniteOrNull(banditResult.budget, null),
+            totalCost: toFiniteOrNull(banditResult.totalCost, null)
+          }
+        : null
     };
 
   } catch (e) {
@@ -2491,13 +2549,13 @@ function apiLogRetrospective(payload) {
 
     sheet.appendRow(row);
     SpreadsheetApp.flush();
-    if (lock) lock.releaseLock();
     return { ok: true };
   } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (err) {}
     }
-    return { ok: false, error: errorToString(e) };
   }
 }
 

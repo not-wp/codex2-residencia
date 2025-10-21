@@ -3195,48 +3195,64 @@
       if (overlayEnabled) {
         showOverlay();
       }
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (overlayEnabled) {
-            hideOverlay();
-          }
-          if (!res || res.ok === false) {
-            const errMsg = res && res.error ? res.error : 'erro desconhecido';
-            console.error(name, errMsg);
+      try {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (overlayEnabled) {
+              hideOverlay();
+            }
+            if (!res || res.ok === false) {
+              const errMsg = res && res.error ? res.error : 'erro desconhecido';
+              console.error(name, errMsg);
+              if (typeof onError === 'function') {
+                try {
+                  onError(errMsg, res);
+                } catch (handlerErr) {
+                  console.error('Erro no error handler de ' + name + ':', handlerErr);
+                }
+              } else {
+                toast('Falha: ' + errMsg, 'error');
+              }
+              return;
+            }
+            if (typeof onOk === 'function') {
+              try {
+                onOk(res);
+              } catch (callbackError) {
+                console.error('Erro no handler de ' + name + ':', callbackError);
+              }
+            }
+          })
+          .withFailureHandler(function(err) {
+            if (overlayEnabled) {
+              hideOverlay();
+            }
+            console.error(name, err);
             if (typeof onError === 'function') {
               try {
-                onError(errMsg, res);
+                onError(err);
               } catch (handlerErr) {
                 console.error('Erro no error handler de ' + name + ':', handlerErr);
               }
             } else {
-              toast('Falha: ' + errMsg, 'error');
+              toast('Erro de comunicação com o servidor.', 'error');
             }
-            return;
+          })[name](payload || {});
+      } catch (callErr) {
+        if (overlayEnabled) {
+          hideOverlay();
+        }
+        console.error(name, callErr);
+        if (typeof onError === 'function') {
+          try {
+            onError(callErr);
+          } catch (handlerErr) {
+            console.error('Erro no error handler de ' + name + ':', handlerErr);
           }
-          if (typeof onOk === 'function') {
-            try {
-              onOk(res);
-            } catch (callbackError) {
-              console.error('Erro no handler de ' + name + ':', callbackError);
-            }
-          }
-        })
-        .withFailureHandler(function(err) {
-          if (overlayEnabled) {
-            hideOverlay();
-          }
-          console.error(name, err);
-          if (typeof onError === 'function') {
-            try {
-              onError(err);
-            } catch (handlerErr) {
-              console.error('Erro no error handler de ' + name + ':', handlerErr);
-            }
-          } else {
-            toast('Erro de comunicação com o servidor.', 'error');
-          }
-        })[name](payload || {});
+        } else {
+          toast('Erro de comunicação com o servidor.', 'error');
+        }
+      }
     }
 
     function toast(message, type = 'success') {
