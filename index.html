@@ -989,6 +989,11 @@
       cursor: pointer;
     }
 
+    .queue-row.is-hidden {
+      opacity: 0.65;
+      cursor: default;
+    }
+
     tr.done {
       background: linear-gradient(90deg, rgba(34, 197, 94, 0.18), rgba(16, 185, 129, 0.08));
       animation: rowSuccess 0.55s ease;
@@ -1637,6 +1642,171 @@
     .policy-subtext {
       font-size: 0.82rem;
       color: rgba(226, 232, 240, 0.7);
+    }
+
+    .visibility-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 18px;
+      align-items: flex-end;
+    }
+
+    .visibility-controls .control {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 160px;
+    }
+
+    .visibility-controls label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .visibility-controls input,
+    .visibility-controls select {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+
+    .visibility-batch {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .visibility-table-wrapper {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(15, 23, 42, 0.45);
+    }
+
+    .visibility-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    .visibility-table thead {
+      background: rgba(30, 41, 59, 0.8);
+    }
+
+    .visibility-table th,
+    .visibility-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(71, 85, 105, 0.35);
+      text-align: left;
+    }
+
+    .visibility-table tbody tr:hover {
+      background: rgba(51, 65, 85, 0.35);
+    }
+
+    .visibility-status {
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .visibility-status.hidden {
+      color: #f97316;
+    }
+
+    .visibility-status.visible {
+      color: #22d3ee;
+    }
+
+    .visibility-empty {
+      padding: 32px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .visibility-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 42px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(148, 163, 184, 0.4);
+      transition: 0.2s;
+      border-radius: 999px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: '';
+      height: 18px;
+      width: 18px;
+      left: 4px;
+      bottom: 3px;
+      background-color: #0f172a;
+      transition: 0.2s;
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.6);
+    }
+
+    .switch input:checked + .slider {
+      background-color: rgba(59, 130, 246, 0.7);
+    }
+
+    .switch input:checked + .slider:before {
+      transform: translateX(16px);
+      background: #f8fafc;
+    }
+
+    .switch input:disabled + .slider {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .queue-badge,
+    .visibility-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: rgba(248, 113, 113, 0.18);
+      color: #fca5a5;
+      margin-left: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .visibility-table .mini-note {
+      color: var(--muted);
+      font-size: 0.78rem;
     }
 
     .pri-main {
@@ -2666,6 +2836,46 @@
         </div>
       </div>
 
+      <div class="card" id="visibilityManager">
+        <h2>Visibilidade de Alvos</h2>
+        <p class="helper-text">Congele temporariamente uma subárea para retirá-la das revisões do dia. Você pode reativar quando quiser e o sistema recalcula a próxima revisão a partir de hoje.</p>
+
+        <div class="visibility-controls">
+          <div class="control">
+            <label for="visibilityAreaFilter">Área</label>
+            <select id="visibilityAreaFilter">
+              <option value="ALL">Todas as áreas</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="visibilitySearch">Buscar alvo</label>
+            <input type="text" id="visibilitySearch" placeholder="Ex: CLINICA::CARDIO">
+          </div>
+          <div class="control visibility-batch">
+            <button id="btnVisibilityFreezeArea" class="btn btn-secondary btn-small" disabled>Congelar área inteira</button>
+            <button id="btnVisibilityUnfreezeArea" class="btn btn-secondary btn-small" disabled>Descongelar área inteira</button>
+          </div>
+        </div>
+
+        <div class="visibility-table-wrapper">
+          <table class="visibility-table">
+            <thead>
+              <tr>
+                <th style="width: 70px;">Ativo</th>
+                <th>Alvo</th>
+                <th>Status</th>
+                <th>Desde</th>
+                <th style="width: 200px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="visibilityTableBody"></tbody>
+          </table>
+          <div id="visibilityEmpty" class="visibility-empty" style="display:none;">
+            Nenhum alvo encontrado com os filtros atuais.
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Como Funciona o Algoritmo</h2>
 
@@ -2970,6 +3180,12 @@
     let dashboardLineRequestId = 0;
     let dashboardBarDataCache = { rows: [], title: 'Acertos por Área', area: 'ALL', emptyMessage: 'Sem dados disponíveis.' };
     let dashboardLineDataCache = { series: [], title: 'Progressão Temporal', area: 'ALL', meta: { window: 28, agg: 'daily' }, emptyMessage: 'Sem dados suficientes para o período.' };
+    let visibilityTargets = [];
+    let visibilityAreaList = [];
+    let visibilityAreaMapData = {};
+    let visibilityCurrentArea = 'ALL';
+    let visibilitySearchTerm = '';
+    let visibilityLoading = false;
     let overlayDepth = 0;
 
     const alvoSuggestionSet = new Set();
@@ -2998,6 +3214,12 @@
     const dashWindowSelect = document.getElementById('dashWindow');
     const dashAggSelect = document.getElementById('dashAgg');
     const btnRevisoesGerar = document.getElementById('btnRevisoesGerar');
+    const visibilityAreaFilter = document.getElementById('visibilityAreaFilter');
+    const visibilitySearchInput = document.getElementById('visibilitySearch');
+    const btnVisibilityFreezeArea = document.getElementById('btnVisibilityFreezeArea');
+    const btnVisibilityUnfreezeArea = document.getElementById('btnVisibilityUnfreezeArea');
+    const visibilityTableBody = document.getElementById('visibilityTableBody');
+    const visibilityEmptyEl = document.getElementById('visibilityEmpty');
 
     if (dashWindowSelect) {
       dashboardWindowDays = Number(dashWindowSelect.value) || dashboardWindowDays;
@@ -3049,6 +3271,46 @@
       });
     }
 
+    if (visibilityAreaFilter) {
+      visibilityAreaFilter.addEventListener('change', function() {
+        visibilityCurrentArea = (this.value || 'ALL').trim() || 'ALL';
+        renderVisibilityTable();
+      });
+    }
+
+    const handleVisibilitySearch = debounce(function(value) {
+      visibilitySearchTerm = (value || '').toLowerCase();
+      renderVisibilityTable();
+    }, 200);
+
+    if (visibilitySearchInput) {
+      visibilitySearchInput.addEventListener('input', function() {
+        handleVisibilitySearch(this.value || '');
+      });
+    }
+
+    if (btnVisibilityFreezeArea) {
+      btnVisibilityFreezeArea.addEventListener('click', function() {
+        const targets = getFilteredVisibilityTargets().filter(item => !item.hidden).map(item => item.alvo);
+        if (targets.length === 0) {
+          toast('Todos os alvos desta área já estão congelados.', 'info');
+          return;
+        }
+        applyBatchVisibility(targets, true);
+      });
+    }
+
+    if (btnVisibilityUnfreezeArea) {
+      btnVisibilityUnfreezeArea.addEventListener('click', function() {
+        const targets = getFilteredVisibilityTargets().filter(item => item.hidden).map(item => item.alvo);
+        if (targets.length === 0) {
+          toast('Nenhum alvo congelado nesta área.', 'info');
+          return;
+        }
+        applyBatchVisibility(targets, false);
+      });
+    }
+
     function getEffectiveDashboardArea(areaOverride) {
       const override = (typeof areaOverride === 'string' && areaOverride.length) ? areaOverride : null;
       const selectValue = dashAreaSelect && dashAreaSelect.value ? dashAreaSelect.value : '';
@@ -3081,6 +3343,259 @@
         clearTimeout(timeoutId);
         timeoutId = setTimeout(() => fn.apply(this, args), wait);
       };
+    }
+
+    function populateVisibilityAreas() {
+      if (!visibilityAreaFilter) return;
+      const previous = visibilityCurrentArea || 'ALL';
+      visibilityAreaFilter.innerHTML = '<option value="ALL">Todas as áreas</option>';
+      const areas = Array.isArray(visibilityAreaList) ? visibilityAreaList.slice().sort() : [];
+      areas.forEach(area => {
+        if (!area) return;
+        const option = document.createElement('option');
+        option.value = area;
+        option.textContent = area;
+        visibilityAreaFilter.appendChild(option);
+      });
+      const targetValue = areas.includes(previous) ? previous : 'ALL';
+      visibilityCurrentArea = targetValue;
+      visibilityAreaFilter.value = targetValue;
+      updateVisibilityBatchButtons();
+    }
+
+    function loadVisibilityData(options = {}) {
+      if (!visibilityTableBody) return;
+      const args = options && options.skipOverlay ? { __skipOverlay: true } : {};
+      visibilityLoading = true;
+      renderVisibilityTable();
+      run('apiListTargetsForVisibility', args, function(res) {
+        visibilityLoading = false;
+        const targets = Array.isArray(res && res.targets) ? res.targets : [];
+        visibilityTargets = targets.map(target => {
+          const alvo = (target && target.alvo) ? `${target.alvo}`.trim() : '';
+          const area = target && target.area ? `${target.area}`.trim() : '—';
+          const subarea = target && target.subarea ? `${target.subarea}`.trim() : '';
+          return {
+            alvo,
+            area,
+            subarea,
+            hidden: toBool(target && target.hidden),
+            hidden_since: target && target.hidden_since ? `${target.hidden_since}` : '',
+            searchIndex: `${alvo}`.toLowerCase()
+          };
+        });
+        visibilityAreaList = Array.isArray(res && res.areas) ? res.areas : [];
+        visibilityAreaMapData = res && res.map ? res.map : {};
+        populateVisibilityAreas();
+        renderVisibilityTable();
+      }, function(error) {
+        visibilityLoading = false;
+        renderVisibilityTable();
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Falha ao carregar visibilidade: ' + message, 'error');
+      });
+    }
+
+    function getFilteredVisibilityTargets() {
+      const term = (visibilitySearchTerm || '').trim();
+      const filtered = (visibilityTargets || []).filter(item => {
+        if (!item || !item.alvo) return false;
+        if (visibilityCurrentArea && visibilityCurrentArea !== 'ALL' && item.area !== visibilityCurrentArea) {
+          return false;
+        }
+        if (!term) return true;
+        const lower = term.toLowerCase();
+        return item.searchIndex.indexOf(lower) >= 0
+          || (item.area && item.area.toLowerCase().indexOf(lower) >= 0)
+          || (item.subarea && item.subarea.toLowerCase().indexOf(lower) >= 0);
+      });
+      filtered.sort((a, b) => {
+        if (a.area === b.area) {
+          return a.alvo.localeCompare(b.alvo);
+        }
+        return a.area.localeCompare(b.area);
+      });
+      return filtered;
+    }
+
+    function updateVisibilityBatchButtons() {
+      const filtered = getFilteredVisibilityTargets();
+      if (btnVisibilityFreezeArea) {
+        const disabled = visibilityLoading || visibilityCurrentArea === 'ALL' || !filtered.some(item => !item.hidden);
+        btnVisibilityFreezeArea.disabled = disabled;
+      }
+      if (btnVisibilityUnfreezeArea) {
+        const disabled = visibilityLoading || visibilityCurrentArea === 'ALL' || !filtered.some(item => item.hidden);
+        btnVisibilityUnfreezeArea.disabled = disabled;
+      }
+    }
+
+    function formatVisibilityDate(value) {
+      if (!value) return '—';
+      try {
+        return formatShortDate(value);
+      } catch (err) {
+        return value;
+      }
+    }
+
+    function renderVisibilityTable() {
+      if (!visibilityTableBody) return;
+      const filtered = getFilteredVisibilityTargets();
+      visibilityTableBody.innerHTML = '';
+      updateVisibilityBatchButtons();
+
+      if (!filtered.length) {
+        if (visibilityEmptyEl) {
+          visibilityEmptyEl.textContent = visibilityLoading
+            ? 'Carregando…'
+            : 'Nenhum alvo encontrado com os filtros atuais.';
+          visibilityEmptyEl.style.display = 'block';
+        }
+        return;
+      }
+
+      if (visibilityEmptyEl) {
+        visibilityEmptyEl.style.display = 'none';
+      }
+
+      filtered.forEach(target => {
+        const row = document.createElement('tr');
+        const toggleCell = document.createElement('td');
+        const statusCell = document.createElement('td');
+        const stateCell = document.createElement('td');
+        const sinceCell = document.createElement('td');
+        const actionsCell = document.createElement('td');
+
+        const isHidden = !!target.hidden;
+
+        const switchLabel = document.createElement('label');
+        switchLabel.className = 'switch';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = !isHidden;
+        input.disabled = visibilityLoading;
+        input.addEventListener('change', function() {
+          const shouldHide = !this.checked;
+          input.checked = !shouldHide;
+          handleVisibilityToggle(target.alvo, shouldHide);
+        });
+        const slider = document.createElement('span');
+        slider.className = 'slider';
+        switchLabel.appendChild(input);
+        switchLabel.appendChild(slider);
+        toggleCell.appendChild(switchLabel);
+
+        const alvoLabel = document.createElement('div');
+        alvoLabel.className = 'pri-main';
+        alvoLabel.textContent = target.alvo || '—';
+        if (isHidden) {
+          const badge = document.createElement('span');
+          badge.className = 'visibility-badge';
+          badge.textContent = 'Congelado';
+          alvoLabel.appendChild(badge);
+        }
+        const subLabel = document.createElement('div');
+        subLabel.className = 'mini-note';
+        subLabel.textContent = target.area ? `${target.area}${target.subarea ? ' • ' + target.subarea : ''}` : '—';
+        statusCell.appendChild(alvoLabel);
+        statusCell.appendChild(subLabel);
+
+        stateCell.className = `visibility-status ${isHidden ? 'hidden' : 'visible'}`;
+        stateCell.textContent = isHidden ? 'Congelado' : 'Visível';
+
+        sinceCell.textContent = isHidden ? formatVisibilityDate(target.hidden_since) : '—';
+
+        const actionsWrapper = document.createElement('div');
+        actionsWrapper.className = 'visibility-actions';
+        const freezeBtn = document.createElement('button');
+        freezeBtn.className = 'btn btn-secondary btn-small';
+        freezeBtn.textContent = 'Congelar';
+        freezeBtn.disabled = visibilityLoading || isHidden;
+        freezeBtn.addEventListener('click', function() {
+          handleVisibilityToggle(target.alvo, true);
+        });
+        const unfreezeBtn = document.createElement('button');
+        unfreezeBtn.className = 'btn btn-primary btn-small';
+        unfreezeBtn.textContent = 'Descongelar';
+        unfreezeBtn.disabled = visibilityLoading || !isHidden;
+        unfreezeBtn.addEventListener('click', function() {
+          handleVisibilityToggle(target.alvo, false);
+        });
+        actionsWrapper.appendChild(freezeBtn);
+        actionsWrapper.appendChild(unfreezeBtn);
+        actionsCell.appendChild(actionsWrapper);
+
+        row.appendChild(toggleCell);
+        row.appendChild(statusCell);
+        row.appendChild(stateCell);
+        row.appendChild(sinceCell);
+        row.appendChild(actionsCell);
+        visibilityTableBody.appendChild(row);
+      });
+    }
+
+    function updateVisibilityStateForTargets(targetIds, hidden, dateISO) {
+      if (!Array.isArray(targetIds)) return;
+      const dateValue = hidden ? (dateISO || new Date().toISOString().slice(0, 10)) : '';
+      const idSet = new Set(targetIds);
+      visibilityTargets = visibilityTargets.map(item => {
+        if (!item || !idSet.has(item.alvo)) return item;
+        return Object.assign({}, item, {
+          hidden,
+          hidden_since: hidden ? dateValue : '',
+          searchIndex: item.searchIndex
+        });
+      });
+    }
+
+    function handleVisibilityToggle(alvo, shouldHide) {
+      if (!alvo) return;
+      visibilityLoading = true;
+      renderVisibilityTable();
+      const endpoint = shouldHide ? 'apiHideTargets' : 'apiUnhideTargets';
+      run(endpoint, { targets: [alvo] }, function(res) {
+        visibilityLoading = false;
+        const dateIso = res && res.date ? res.date : new Date().toISOString().slice(0, 10);
+        updateVisibilityStateForTargets([alvo], shouldHide, dateIso);
+        renderVisibilityTable();
+        toast(shouldHide ? `Alvo ${alvo} congelado.` : `Alvo ${alvo} reativado.`, 'success');
+      }, function(error) {
+        visibilityLoading = false;
+        renderVisibilityTable();
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Falha na operação: ' + message, 'error');
+      });
+    }
+
+    function applyBatchVisibility(targets, shouldHide) {
+      if (!Array.isArray(targets) || targets.length === 0) {
+        return;
+      }
+      visibilityLoading = true;
+      renderVisibilityTable();
+      const endpoint = shouldHide ? 'apiHideTargets' : 'apiUnhideTargets';
+      run(endpoint, { targets: targets.slice() }, function(res) {
+        visibilityLoading = false;
+        const dateIso = res && res.date ? res.date : new Date().toISOString().slice(0, 10);
+        updateVisibilityStateForTargets(targets, shouldHide, dateIso);
+        renderVisibilityTable();
+        const message = shouldHide
+          ? `Congelado ${targets.length} alvo(s).`
+          : `Reativado ${targets.length} alvo(s).`;
+        toast(message, 'success');
+      }, function(error) {
+        visibilityLoading = false;
+        renderVisibilityTable();
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Falha na operação: ' + message, 'error');
+      });
     }
 
     const REVIEW_DONE_KEY = 'revisoesDone';
@@ -5981,6 +6496,9 @@
 
     function normalizeQueueItem(item) {
       if (!item) return item;
+      if (item.hidden !== undefined) {
+        item.hidden = toBool(item.hidden);
+      }
       const feitoPlanilha = item.feito !== undefined && item.feito !== null && `${item.feito}`.toString().trim() !== '' && `${item.feito}` !== '0';
       const feitoLocal = isReviewMarkedLocal(item.alvo);
       const doneFlag = feitoPlanilha || feitoLocal;
@@ -6074,6 +6592,10 @@
         if (item.__done) {
           row.classList.add('done');
         }
+        const isHidden = !!item.hidden;
+        if (isHidden) {
+          row.classList.add('is-hidden');
+        }
 
         const alvoCell = document.createElement('td');
         alvoCell.className = 'col-alvo';
@@ -6083,8 +6605,9 @@
         const alvoLabel = alvoParts.area
           ? `${alvoParts.area}${alvoParts.subarea ? '::' + alvoParts.subarea : ''}`
           : (item.alvo || '—');
+        const hiddenBadge = isHidden ? '<span class="queue-badge">Congelado</span>' : '';
         alvoCell.innerHTML = `
-          <div class="pri-main">${alvoLabel}</div>
+          <div class="pri-main">${alvoLabel}${hiddenBadge}</div>
           ${item.proximaRevisao ? `<div class="helper-text">Próx: ${item.proximaRevisao}</div>` : ''}
         `;
 
@@ -6135,6 +6658,11 @@
           });
           actionsWrapper.appendChild(doneLabel);
           actionsWrapper.appendChild(undoBtn);
+        } else if (isHidden) {
+          const hiddenLabel = document.createElement('span');
+          hiddenLabel.className = 'helper-text';
+          hiddenLabel.textContent = 'Alvo congelado';
+          actionsWrapper.appendChild(hiddenLabel);
         } else {
           const startBtn = document.createElement('button');
           startBtn.className = 'btn btn-secondary btn-small';
@@ -6519,6 +7047,9 @@
           preencherFormAjustes(settings);
           updatePlannerControls();
           setLoading(false);
+          if (visibilityTableBody) {
+            loadVisibilityData({ skipOverlay: true });
+          }
         })
         .withFailureHandler(function(error) {
           handleError(error);

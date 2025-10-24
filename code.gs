@@ -23,9 +23,9 @@ const SHEET_NAMES = {
 const HEADERS = {
   LOG: ['data', 'area', 'subarea', 'total', 'acertos', 'tempoMedioSeg', 'difPercebida', 'flags', 'obs', 'uid'],
   STATS: ['area', 'subarea', 'total_blocos', 'questoes', 'acertos', 'acerto_vida', 'acerto_28d', 'acerto_7d', 'tempo_medio', 'flags_28d', 'dif_media', 'ultimaData'],
-  SPACED: ['alvo', 'ultimaRevisao', 'estabilidade', 'dificuldade_media', 'proximaRevisao', 'lapses', 'prioridade'],
+  SPACED: ['alvo', 'ultimaRevisao', 'estabilidade', 'dificuldade_media', 'proximaRevisao', 'lapses', 'prioridade', 'hidden', 'hidden_since'],
   REVER_HOJE: ['alvo', 'prioridade', 'proximaRevisao', 'estabilidade', 'feito'],
-  MODEL: ['alvo', 'theta0', 'theta1', 'theta2', 'S_atual', 'ultima_atualizacao', 'sigma', 'n_eff', 'weibull_k'],
+  MODEL: ['alvo', 'theta0', 'theta1', 'theta2', 'S_atual', 'ultima_atualizacao', 'sigma', 'n_eff', 'weibull_k', 'hidden', 'hidden_since'],
   REVISAO_LOG: ['data', 'alvo', 'tDias', 'metaUsada', 'p_prev', 'acertou', 'tempoSeg', 'difPercebida', 'flags', 'obs', 'total', 'acertos'],
   SETTINGS: ['retentionTarget', 'wPeg', 'wTempo', 'wDif', 'alpha', 'overdueMode', 'lrEta', 'regLambda', 'halfLifeDecayDays', 'reviewOutcomeWeight', 'Smin', 'Smax', 'Imin', 'Imax', 'betaUncertainty', 'shrinkageC', 'lambdaDiversity', 'planGainMix', 'flashcardsPerMinBase', 'minD1ReadMin', 'banditEnabledForGuide', 'kappaPriToDelta', 'fatigueFactor', 'lambdaSurprise', 'coverageTarget7d', 'powerAlphaScale', 'powerBetaScale', 'powerDiversityScale', 'maintAlphaScale', 'maintBetaScale', 'maintDiversityScale', 'useAdvancedPriority', 'useGainLCB', 'useRLSKalman', 'useDiversityReg', 'useWeibull', 'useBanditPlanner', 'useABTesting'],
   EXAM_CONFIG: ['area', 'peso', 'dataProva'],
@@ -600,6 +600,442 @@ function apiSaveSettings(obj) {
 }
 
 // ============================================================================
+// API: VISIBILIDADE DE ALVOS (CONGELAR/DESCONGELAR)
+// ============================================================================
+
+function apiListTargetsForVisibility(params) {
+  try {
+    getOrCreateSheet(SHEET_NAMES.SPACED, HEADERS.SPACED);
+    getOrCreateSheet(SHEET_NAMES.MODEL, HEADERS.MODEL);
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const statsData = readSheetData(SHEET_NAMES.STATS);
+
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const targetsMap = {};
+    const areaMap = {};
+
+    function ensureEntry(alvo) {
+      if (!alvo) return null;
+      const key = `${alvo}`.trim();
+      if (!key) return null;
+      if (!targetsMap[key]) {
+        const parts = parseAlvoParts(key);
+        const area = parts.area || '—';
+        const subarea = parts.subarea || '';
+        targetsMap[key] = {
+          alvo: key,
+          area,
+          subarea,
+          hidden: false,
+          hidden_since: ''
+        };
+        if (!areaMap[area]) {
+          areaMap[area] = new Set();
+        }
+        if (subarea) {
+          areaMap[area].add(subarea);
+        }
+      }
+      return targetsMap[key];
+    }
+
+    spacedData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const entry = ensureEntry(row.alvo);
+      if (!entry) return;
+      const info = resolveHiddenState(row, modelMap[row.alvo]);
+      if (info.hidden) {
+        entry.hidden = true;
+        entry.hidden_since = info.hiddenSince;
+      } else if (!entry.hidden_since && info.hiddenSince) {
+        entry.hidden_since = info.hiddenSince;
+      }
+    });
+
+    modelData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const entry = ensureEntry(row.alvo);
+      if (!entry) return;
+      const info = resolveHiddenState(null, row);
+      if (info.hidden) {
+        entry.hidden = true;
+        entry.hidden_since = info.hiddenSince;
+      } else if (!entry.hidden_since && info.hiddenSince) {
+        entry.hidden_since = info.hiddenSince;
+      }
+    });
+
+    statsData.forEach(row => {
+      if (!row || !row.area) return;
+      const alvo = `${row.area}::${row.subarea || ''}`;
+      const entry = ensureEntry(alvo);
+      if (entry && row.subarea) {
+        areaMap[entry.area].add(row.subarea);
+      }
+    });
+
+    const areas = Object.keys(areaMap)
+      .filter(area => area && area !== '—')
+      .sort();
+
+    const targets = Object.values(targetsMap).sort((a, b) => {
+      if (a.area === b.area) {
+        return a.subarea.localeCompare(b.subarea);
+      }
+      return a.area.localeCompare(b.area);
+    });
+
+    const map = {};
+    areas.forEach(area => {
+      map[area] = Array.from(areaMap[area] || []).sort();
+    });
+
+    return { ok: true, areas, targets, map };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiHideTargets(payload) {
+  try {
+    const targets = normalizeTargetList((payload && payload.targets) || []);
+    if (targets.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    const todayISO = getTodayISO();
+    const stateMap = {};
+    targets.forEach(alvo => {
+      stateMap[alvo] = { hidden: true, hiddenSince: todayISO };
+    });
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+
+    // Marca hidden=TRUE nas abas SPACED e MODEL.
+    const touchedSpaced = updateHiddenStateForSheet(SHEET_NAMES.SPACED, 'SPACED', stateMap, spacedData);
+    const touchedModel = updateHiddenStateForSheet(SHEET_NAMES.MODEL, 'MODEL', stateMap, modelData);
+
+    const updatedSet = new Set();
+    touchedSpaced.forEach(alvo => updatedSet.add(alvo));
+    touchedModel.forEach(alvo => updatedSet.add(alvo));
+
+    return { ok: true, updated: updatedSet.size, date: todayISO };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiUnhideTargets(payload) {
+  try {
+    const targets = normalizeTargetList((payload && payload.targets) || []);
+    if (targets.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    const settings = apiGetSettings();
+    const metaRaw = parseFloat(settings.retentionTarget);
+    const retentionTarget = isFinite(metaRaw) && metaRaw > 0 && metaRaw < 1
+      ? metaRaw
+      : DEFAULT_SETTINGS.retentionTarget;
+    const Smin = toFiniteOrNull(settings.Smin, DEFAULT_SETTINGS.Smin) || DEFAULT_SETTINGS.Smin;
+    const Smax = toFiniteOrNull(settings.Smax, DEFAULT_SETTINGS.Smax) || DEFAULT_SETTINGS.Smax;
+    const Imin = toFiniteOrNull(settings.Imin, DEFAULT_SETTINGS.Imin) || DEFAULT_SETTINGS.Imin;
+    const Imax = toFiniteOrNull(settings.Imax, DEFAULT_SETTINGS.Imax) || DEFAULT_SETTINGS.Imax;
+    const useWeibull = asBoolean(settings.useWeibull);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = formatDateISO(today);
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const clearMap = {};
+    targets.forEach(alvo => {
+      clearMap[alvo] = { hidden: false, hiddenSince: '' };
+    });
+
+    // Marca hidden=FALSE nas abas SPACED e MODEL.
+    const touchedSpaced = updateHiddenStateForSheet(SHEET_NAMES.SPACED, 'SPACED', clearMap, spacedData);
+    const touchedModel = updateHiddenStateForSheet(SHEET_NAMES.MODEL, 'MODEL', clearMap, modelData);
+
+    // Ao descongelar, recalculamos a próxima revisão a partir de hoje.
+    const spacedSheet = getOrCreateSheet(SHEET_NAMES.SPACED, HEADERS.SPACED);
+    const proxIdx = HEADERS.SPACED.indexOf('proximaRevisao');
+    const estIdx = HEADERS.SPACED.indexOf('estabilidade');
+    if (proxIdx >= 0 && spacedData.length > 0) {
+      spacedData.forEach((row, idx) => {
+        if (!row || !row.alvo) return;
+        const alvo = `${row.alvo}`.trim();
+        if (!alvo || !clearMap[alvo]) return;
+        const parts = parseAlvoParts(alvo);
+        const modelRow = modelMap[alvo];
+        let S = toFiniteOrNull(row.estabilidade, null);
+        if (!isFinite(S) || S === null || S <= 0) {
+          const modelS = modelRow ? toFiniteOrNull(modelRow.S_atual, null) : null;
+          S = isFinite(modelS) && modelS > 0 ? modelS : Smin;
+        }
+        S = clamp(S, Smin, Smax);
+        const shape = useWeibull ? getWeibullShape(parts.area, settings) : 1;
+        let interval = calcOptimalInterval(S, retentionTarget, shape);
+        interval = applyCapI(interval, Imin, Imax);
+        const dias = Math.max(1, Math.ceil(interval));
+        const nextDate = new Date(today);
+        nextDate.setDate(today.getDate() + dias);
+        spacedSheet.getRange(idx + 2, proxIdx + 1).setValue(nextDate);
+        if (estIdx >= 0) {
+          spacedSheet.getRange(idx + 2, estIdx + 1).setValue(S);
+        }
+        row.hidden = false;
+        row.hidden_since = '';
+      });
+    }
+
+    const updatedSet = new Set();
+    touchedSpaced.forEach(alvo => updatedSet.add(alvo));
+    touchedModel.forEach(alvo => updatedSet.add(alvo));
+
+    return { ok: true, updated: updatedSet.size, date: todayISO };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+// ============================================================================
+// API: VISIBILIDADE DE ALVOS (CONGELAR/DESCONGELAR)
+// ============================================================================
+
+function apiListTargetsForVisibility(params) {
+  try {
+    getOrCreateSheet(SHEET_NAMES.SPACED, HEADERS.SPACED);
+    getOrCreateSheet(SHEET_NAMES.MODEL, HEADERS.MODEL);
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const statsData = readSheetData(SHEET_NAMES.STATS);
+
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const targetsMap = {};
+    const areaMap = {};
+
+    function ensureEntry(alvo) {
+      if (!alvo) return null;
+      const key = `${alvo}`.trim();
+      if (!key) return null;
+      if (!targetsMap[key]) {
+        const parts = parseAlvoParts(key);
+        const area = parts.area || '—';
+        const subarea = parts.subarea || '';
+        targetsMap[key] = {
+          alvo: key,
+          area,
+          subarea,
+          hidden: false,
+          hidden_since: ''
+        };
+        if (!areaMap[area]) {
+          areaMap[area] = new Set();
+        }
+        if (subarea) {
+          areaMap[area].add(subarea);
+        }
+      }
+      return targetsMap[key];
+    }
+
+    spacedData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const entry = ensureEntry(row.alvo);
+      if (!entry) return;
+      const info = resolveHiddenState(row, modelMap[row.alvo]);
+      if (info.hidden) {
+        entry.hidden = true;
+        entry.hidden_since = info.hiddenSince;
+      } else if (!entry.hidden_since && info.hiddenSince) {
+        entry.hidden_since = info.hiddenSince;
+      }
+    });
+
+    modelData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const entry = ensureEntry(row.alvo);
+      if (!entry) return;
+      const info = resolveHiddenState(null, row);
+      if (info.hidden) {
+        entry.hidden = true;
+        entry.hidden_since = info.hiddenSince;
+      } else if (!entry.hidden_since && info.hiddenSince) {
+        entry.hidden_since = info.hiddenSince;
+      }
+    });
+
+    statsData.forEach(row => {
+      if (!row || !row.area) return;
+      const alvo = `${row.area}::${row.subarea || ''}`;
+      const entry = ensureEntry(alvo);
+      if (entry && row.subarea) {
+        areaMap[entry.area].add(row.subarea);
+      }
+    });
+
+    const areas = Object.keys(areaMap)
+      .filter(area => area && area !== '—')
+      .sort();
+
+    const targets = Object.values(targetsMap).sort((a, b) => {
+      if (a.area === b.area) {
+        return a.subarea.localeCompare(b.subarea);
+      }
+      return a.area.localeCompare(b.area);
+    });
+
+    const map = {};
+    areas.forEach(area => {
+      map[area] = Array.from(areaMap[area] || []).sort();
+    });
+
+    return { ok: true, areas, targets, map };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiHideTargets(payload) {
+  try {
+    const targets = normalizeTargetList((payload && payload.targets) || []);
+    if (targets.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    const todayISO = getTodayISO();
+    const stateMap = {};
+    targets.forEach(alvo => {
+      stateMap[alvo] = { hidden: true, hiddenSince: todayISO };
+    });
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+
+    // Marca hidden=TRUE nas abas SPACED e MODEL.
+    const touchedSpaced = updateHiddenStateForSheet(SHEET_NAMES.SPACED, 'SPACED', stateMap, spacedData);
+    const touchedModel = updateHiddenStateForSheet(SHEET_NAMES.MODEL, 'MODEL', stateMap, modelData);
+
+    const updatedSet = new Set();
+    touchedSpaced.forEach(alvo => updatedSet.add(alvo));
+    touchedModel.forEach(alvo => updatedSet.add(alvo));
+
+    return { ok: true, updated: updatedSet.size };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiUnhideTargets(payload) {
+  try {
+    const targets = normalizeTargetList((payload && payload.targets) || []);
+    if (targets.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    const settings = apiGetSettings();
+    const metaRaw = parseFloat(settings.retentionTarget);
+    const retentionTarget = isFinite(metaRaw) && metaRaw > 0 && metaRaw < 1
+      ? metaRaw
+      : DEFAULT_SETTINGS.retentionTarget;
+    const Smin = toFiniteOrNull(settings.Smin, DEFAULT_SETTINGS.Smin) || DEFAULT_SETTINGS.Smin;
+    const Smax = toFiniteOrNull(settings.Smax, DEFAULT_SETTINGS.Smax) || DEFAULT_SETTINGS.Smax;
+    const Imin = toFiniteOrNull(settings.Imin, DEFAULT_SETTINGS.Imin) || DEFAULT_SETTINGS.Imin;
+    const Imax = toFiniteOrNull(settings.Imax, DEFAULT_SETTINGS.Imax) || DEFAULT_SETTINGS.Imax;
+    const useWeibull = asBoolean(settings.useWeibull);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = formatDateISO(today);
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const clearMap = {};
+    targets.forEach(alvo => {
+      clearMap[alvo] = { hidden: false, hiddenSince: '' };
+    });
+
+    // Marca hidden=FALSE nas abas SPACED e MODEL.
+    const touchedSpaced = updateHiddenStateForSheet(SHEET_NAMES.SPACED, 'SPACED', clearMap, spacedData);
+    const touchedModel = updateHiddenStateForSheet(SHEET_NAMES.MODEL, 'MODEL', clearMap, modelData);
+
+    // Ao descongelar, recalculamos a próxima revisão a partir de hoje.
+    const spacedSheet = getOrCreateSheet(SHEET_NAMES.SPACED, HEADERS.SPACED);
+    const proxIdx = HEADERS.SPACED.indexOf('proximaRevisao');
+    const estIdx = HEADERS.SPACED.indexOf('estabilidade');
+    if (proxIdx >= 0 && spacedData.length > 0) {
+      spacedData.forEach((row, idx) => {
+        if (!row || !row.alvo) return;
+        const alvo = `${row.alvo}`.trim();
+        if (!alvo || !clearMap[alvo]) return;
+        const parts = parseAlvoParts(alvo);
+        const modelRow = modelMap[alvo];
+        let S = toFiniteOrNull(row.estabilidade, null);
+        if (!isFinite(S) || S === null || S <= 0) {
+          const modelS = modelRow ? toFiniteOrNull(modelRow.S_atual, null) : null;
+          S = isFinite(modelS) && modelS > 0 ? modelS : Smin;
+        }
+        S = clamp(S, Smin, Smax);
+        const shape = useWeibull ? getWeibullShape(parts.area, settings) : 1;
+        let interval = calcOptimalInterval(S, retentionTarget, shape);
+        interval = applyCapI(interval, Imin, Imax);
+        const dias = Math.max(1, Math.ceil(interval));
+        const nextDate = new Date(today);
+        nextDate.setDate(today.getDate() + dias);
+        spacedSheet.getRange(idx + 2, proxIdx + 1).setValue(nextDate);
+        if (estIdx >= 0) {
+          spacedSheet.getRange(idx + 2, estIdx + 1).setValue(S);
+        }
+        row.hidden = false;
+        row.hidden_since = '';
+      });
+    }
+
+    const updatedSet = new Set();
+    touchedSpaced.forEach(alvo => updatedSet.add(alvo));
+    touchedModel.forEach(alvo => updatedSet.add(alvo));
+
+    return { ok: true, updated: updatedSet.size, date: todayISO };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+
+
+// ============================================================================
 // API: LANÇAR BLOCO
 // ============================================================================
 
@@ -833,7 +1269,9 @@ function apiProcessLogInternal() {
           dif_media,
           proximaRevisao,
           0, // lapses
-          0  // prioridade
+          0, // prioridade
+          false, // hidden
+          '' // hidden_since
         ];
         
         writeSheetRow(SHEET_NAMES.SPACED, newSpacedRow);
@@ -852,7 +1290,9 @@ function apiProcessLogInternal() {
             hoje,
             0.2,
             0,
-            1
+            1,
+            false,
+            ''
           ];
           writeSheetRow(SHEET_NAMES.MODEL, newModelRow);
         }
@@ -1310,7 +1750,13 @@ function clamp(value, min, max) {
 }
 
 function asBoolean(value) {
-  return value === true || value === 'true' || value === 1 || value === '1';
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0) return false;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'sim';
+  }
+  return false;
 }
 
 function parseAlvoParts(alvo) {
@@ -1319,6 +1765,119 @@ function parseAlvoParts(alvo) {
     area: (parts[0] || '').trim(),
     subarea: (parts[1] || '').trim()
   };
+}
+
+function resolveHiddenState(spacedRow, modelRow) {
+  let hidden = false;
+  let hiddenSince = '';
+
+  if (spacedRow && spacedRow.hidden !== undefined) {
+    hidden = hidden || asBoolean(spacedRow.hidden);
+    if (!hiddenSince && spacedRow.hidden_since) {
+      hiddenSince = spacedRow.hidden_since;
+    }
+  }
+  if (modelRow && modelRow.hidden !== undefined) {
+    hidden = hidden || asBoolean(modelRow.hidden);
+    if (!hiddenSince && modelRow.hidden_since) {
+      hiddenSince = modelRow.hidden_since;
+    }
+  }
+
+  if (hiddenSince) {
+    const parsed = parseSheetDate(hiddenSince) || parseIsoDateToLocal(hiddenSince);
+    hiddenSince = parsed ? formatDateISO(parsed) : `${hiddenSince}`;
+  }
+
+  if (!hidden) {
+    hiddenSince = '';
+  }
+
+  return { hidden, hiddenSince };
+}
+
+function isTargetHidden(spacedRow, modelRow) {
+  return resolveHiddenState(spacedRow, modelRow).hidden;
+}
+
+function normalizeTargetList(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const result = [];
+  list.forEach(item => {
+    if (item === null || item === undefined) return;
+    const value = `${item}`.trim();
+    if (!value) return;
+    if (!seen.has(value)) {
+      seen.add(value);
+      result.push(value);
+    }
+  });
+  return result;
+}
+
+function getTodayISO() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return formatDateISO(today);
+}
+
+function updateHiddenStateForSheet(sheetName, headerKey, targetStates, dataRows) {
+  const headers = HEADERS[headerKey];
+  if (!headers) return [];
+  const hiddenIdx = headers.indexOf('hidden');
+  const sinceIdx = headers.indexOf('hidden_since');
+  if (hiddenIdx < 0 && sinceIdx < 0) {
+    return [];
+  }
+
+  const sheet = getOrCreateSheet(sheetName, headers);
+  const data = Array.isArray(dataRows) ? dataRows : readSheetData(sheetName);
+  if (!Array.isArray(data) || data.length === 0) {
+    return [];
+  }
+
+  const hiddenValues = hiddenIdx >= 0
+    ? data.map(row => [asBoolean(row && row.hidden)])
+    : [];
+  const sinceValues = sinceIdx >= 0
+    ? data.map(row => {
+        const current = row && row.hidden_since ? row.hidden_since : '';
+        if (!current) return [''];
+        const parsed = parseSheetDate(current) || parseIsoDateToLocal(current);
+        return [parsed ? formatDateISO(parsed) : `${current}`];
+      })
+    : [];
+
+  const touched = [];
+
+  data.forEach((row, idx) => {
+    if (!row || !row.alvo) return;
+    const alvo = `${row.alvo}`.trim();
+    if (!alvo) return;
+    const state = targetStates[alvo];
+    if (!state) return;
+    touched.push(alvo);
+    if (hiddenIdx >= 0) {
+      hiddenValues[idx][0] = !!state.hidden;
+    }
+    if (sinceIdx >= 0) {
+      sinceValues[idx][0] = state.hidden ? state.hiddenSince : '';
+    }
+  });
+
+  if (touched.length === 0) {
+    return [];
+  }
+
+  if (hiddenIdx >= 0) {
+    sheet.getRange(2, hiddenIdx + 1, hiddenValues.length, 1).setValues(hiddenValues);
+  }
+  if (sinceIdx >= 0) {
+    sheet.getRange(2, sinceIdx + 1, sinceValues.length, 1).setValues(sinceValues);
+  }
+
+  return touched;
 }
 
 function identityMatrix(size, scale) {
@@ -1989,10 +2548,17 @@ function gatherReviewCandidates(settings, referenceDate) {
     }
 
     const statsRow = statsMap[item.alvo];
+    const modelRow = modelMap[item.alvo] || null;
+    const hiddenInfo = resolveHiddenState(item, modelRow);
+    if (hiddenInfo.hidden) {
+      priorityUpdates[idx] = { index: idx, alvo: item.alvo, value: 0 };
+      return;
+    }
+
     const alvoParts = parseAlvoParts(item.alvo || '');
     const areaKeyRaw = (alvoParts.area || '').toString().trim() || 'Sem área';
     const extras = {
-      modelRow: modelMap[item.alvo] || null,
+      modelRow,
       horizonDays,
       residualValue: residualMap.hasOwnProperty(item.alvo) ? residualMap[item.alvo] : null,
       surpriseLambda: settings.lambdaSurprise,
@@ -2266,9 +2832,15 @@ function apiMakeReviewToday() {
         return;
       }
 
+      const modelRow = modelMap[alvo];
+      const hiddenInfo = resolveHiddenState(row, modelRow);
+      if (hiddenInfo.hidden) {
+        priorityValues.push([0]);
+        return;
+      }
+
       const parts = parseAlvoParts(alvo);
       const statsRow = statsMap[alvo];
-      const modelRow = modelMap[alvo];
 
       let S = toFiniteOrNull(row.estabilidade, null);
       if (!isFinite(S) || S === null || S <= 0) {
@@ -4388,6 +4960,13 @@ function apiWeeklyPlan(params) {
 function debugSpaced() {
   try {
     const spaced = readSheetData(SHEET_NAMES.SPACED);
+    const modelRows = readSheetData(SHEET_NAMES.MODEL);
+    const modelMap = {};
+    modelRows.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
     Logger.log('Total de registros em SPACED: ' + spaced.length);
     
     if (spaced.length > 0) {
@@ -4691,6 +5270,7 @@ function apiGetReviewCalendar(days) {
     spaced.forEach(item => {
       const proxRevisao = parseSheetDate(item.proximaRevisao);
       if (!proxRevisao) return;
+      if (isTargetHidden(item, modelMap[item.alvo])) return;
       const dateStr = formatDateDDMMYYYY(proxRevisao);
 
       if (calendar[dateStr] !== undefined) {
@@ -4842,6 +5422,7 @@ function apiLogReviewOutcome(payload) {
     const modelSheet = getOrCreateSheet(SHEET_NAMES.MODEL, HEADERS.MODEL);
     const modelData = readSheetData(SHEET_NAMES.MODEL);
     let modelIdx = modelData.findIndex(row => row.alvo === alvo);
+    const existingModelRow = modelIdx >= 0 ? modelData[modelIdx] : null;
     let theta0;
     let theta1;
     let theta2;
@@ -4850,8 +5431,8 @@ function apiLogReviewOutcome(payload) {
     let nEffAtual = 0;
     let rlsState = null;
 
-    if (modelIdx >= 0) {
-      const modelRow = modelData[modelIdx];
+    if (existingModelRow) {
+      const modelRow = existingModelRow;
       theta0 = parseFloat(modelRow.theta0);
       theta1 = parseFloat(modelRow.theta1);
       theta2 = parseFloat(modelRow.theta2);
@@ -4972,6 +5553,7 @@ function apiLogReviewOutcome(payload) {
     );
     const prioridade = prioridadeInfo.score;
 
+    const hiddenInfo = resolveHiddenState(spacedRow, existingModelRow);
     const spacedRowValues = [
       alvo,
       ultimaRevisaoValor,
@@ -4979,7 +5561,9 @@ function apiLogReviewOutcome(payload) {
       difMedia,
       proximaRevisao,
       lapsesAtual,
-      prioridade
+      prioridade,
+      hiddenInfo.hidden,
+      hiddenInfo.hiddenSince
     ];
 
     if (spacedIdx >= 0) {
@@ -4997,7 +5581,9 @@ function apiLogReviewOutcome(payload) {
       hoje,
       sigmaAtual,
       nEffAtual,
-      weibullKAfter
+      weibullKAfter,
+      hiddenInfo.hidden,
+      hiddenInfo.hiddenSince
     ];
 
     if (modelIdx >= 0) {
@@ -5044,6 +5630,32 @@ function apiRecompute() {
     const revisaoLog = readSheetData(SHEET_NAMES.REVISAO_LOG);
     const statsData = readSheetData(SHEET_NAMES.STATS);
     const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+
+    const spacedMap = {};
+    spacedData.forEach(row => {
+      if (row && row.alvo) {
+        spacedMap[row.alvo] = row;
+      }
+    });
+
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const hiddenStateByTarget = {};
+    const hiddenTargets = new Set([
+      ...Object.keys(spacedMap),
+      ...Object.keys(modelMap)
+    ]);
+    hiddenTargets.forEach(alvo => {
+      const spacedRow = spacedMap[alvo] || null;
+      const modelRow = modelMap[alvo] || null;
+      hiddenStateByTarget[alvo] = resolveHiddenState(spacedRow, modelRow);
+    });
 
     const statsMap = {};
     statsData.forEach(row => {
@@ -5130,6 +5742,7 @@ function apiRecompute() {
       const sigma = Math.sqrt(Math.max(1e-6, state.sigma2));
       const alvoParts = parseAlvoParts(alvo);
       const weibullK = asBoolean(settings.useWeibull) ? getWeibullShape(alvoParts.area, settings) : 1;
+      const hiddenInfo = hiddenStateByTarget[alvo] || { hidden: false, hiddenSince: '' };
       return [
         alvo,
         state.theta[0],
@@ -5139,7 +5752,9 @@ function apiRecompute() {
         new Date(),
         sigma,
         state.nEff,
-        weibullK
+        weibullK,
+        hiddenInfo.hidden,
+        hiddenInfo.hiddenSince
       ];
     });
     if (modelRows.length > 0) {
@@ -5195,6 +5810,7 @@ function apiRecompute() {
         }
       );
 
+      const hiddenInfo = hiddenStateByTarget[alvo] || { hidden: false, hiddenSince: '' };
       const updatedRow = [
         alvo,
         ultimaRevisao,
@@ -5202,7 +5818,9 @@ function apiRecompute() {
         item.dificuldade_media,
         proximaRevisao,
         item.lapses,
-        prioridadeInfo.score
+        prioridadeInfo.score,
+        hiddenInfo.hidden,
+        hiddenInfo.hiddenSince
       ];
       updateSheetRow(SHEET_NAMES.SPACED, idx, updatedRow);
     });
