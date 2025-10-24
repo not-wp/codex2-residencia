@@ -5255,9 +5255,16 @@ function apiGetReviewCalendar(days) {
   try {
     days = days || 7;
     const spaced = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
-    
+
     const calendar = {};
 
     for (let i = 0; i < days; i++) {
@@ -5270,6 +5277,7 @@ function apiGetReviewCalendar(days) {
     spaced.forEach(item => {
       const proxRevisao = parseSheetDate(item.proximaRevisao);
       if (!proxRevisao) return;
+      // Evita contar alvos congelados no calendário de revisões
       if (isTargetHidden(item, modelMap[item.alvo])) return;
       const dateStr = formatDateDDMMYYYY(proxRevisao);
 
