@@ -5515,7 +5515,9 @@ function apiLogReviewOutcome(payload) {
     if (!isFinite(I)) {
       I = settings.Imin;
     }
-    I = applyCapI(Math.round(I), settings.Imin, settings.Imax);
+    // Usa teto para evitar estagnar no mesmo intervalo por arredondamento para baixo.
+    // Ex.: 2.1 dia deve virar 3 (não 2) para permitir progressão do espaçamento.
+    I = applyCapI(Math.ceil(I), settings.Imin, settings.Imax);
 
     const proximaRevisao = new Date(hojeSemHora);
     proximaRevisao.setDate(proximaRevisao.getDate() + I);
@@ -5785,7 +5787,8 @@ function apiRecompute() {
       if (!isFinite(I)) {
         I = settings.Imin;
       }
-      I = applyCapI(Math.round(I), settings.Imin, settings.Imax);
+      // Mantém a mesma regra do fluxo online: arredondar para cima evita repetição de 2 dias.
+      I = applyCapI(Math.ceil(I), settings.Imin, settings.Imax);
 
       const ultimaRevisao = parseSheetDate(item.ultimaRevisao) || new Date();
       const proximaRevisao = new Date(ultimaRevisao.getTime());
