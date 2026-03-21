@@ -989,6 +989,11 @@
       cursor: pointer;
     }
 
+    .queue-row.is-hidden {
+      opacity: 0.65;
+      cursor: default;
+    }
+
     tr.done {
       background: linear-gradient(90deg, rgba(34, 197, 94, 0.18), rgba(16, 185, 129, 0.08));
       animation: rowSuccess 0.55s ease;
@@ -1046,37 +1051,207 @@
       background: rgba(56, 189, 248, 0.08);
     }
 
-    .reviews-table .col-alvo { width: 26%; }
+    .reviews-table .col-alvo { width: 28%; }
     .reviews-table .col-pri { width: 12%; }
-    .reviews-table .col-s { width: 9%; }
-    .reviews-table .col-t { width: 9%; }
-    .reviews-table .col-evi { width: 14%; }
-    .reviews-table .col-alloc { width: 14%; }
-    .reviews-table .col-delta { width: 10%; }
-    .reviews-table .col-status { width: 12%; text-align: center; }
+    .reviews-table .col-s { width: 10%; }
+    .reviews-table .col-r { width: 12%; }
+    .reviews-table .col-overdue { width: 12%; }
+    .reviews-table .col-tempo { width: 12%; }
+    .reviews-table .col-acoes { width: 14%; text-align: center; }
 
-    .status-cell {
-      text-align: center;
+    .queue-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
-    .status-toggle {
-      display: inline-flex;
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease;
+      z-index: 1000;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.95);
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 24px;
+      width: min(440px, 92vw);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      z-index: 1001;
+    }
+
+    .modal.active {
+      opacity: 1;
+      visibility: visible;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .modal h3 {
+      margin-bottom: 16px;
+      color: var(--accent);
+    }
+
+    .modal .form-group {
+      margin-bottom: 12px;
+    }
+
+    .modal .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .queue-actions .btn {
+      min-width: 90px;
+    }
+
+    .queue-actions .done-label {
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .review-summary {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media (min-width: 900px) {
+      .review-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .summary-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .summary-card h4 {
+      font-size: 1rem;
+      color: var(--accent);
+    }
+
+    .summary-metric {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .summary-subtext {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .chart-placeholder {
+      height: 200px;
+      display: flex;
       align-items: center;
-      gap: 6px;
       justify-content: center;
+      color: var(--text-secondary);
+      border: 1px dashed rgba(148, 163, 184, 0.35);
+      border-radius: 10px;
+    }
+
+    .dashboard-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .dashboard-filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 160px;
+    }
+
+    .dashboard-filter-group label {
       font-size: 0.85rem;
       color: var(--text-secondary);
     }
 
-    .status-toggle input[type="checkbox"] {
-      width: 18px;
-      height: 18px;
-      accent-color: var(--success);
+    .dashboard-filter-group select {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      padding: 8px 10px;
+      font-size: 0.95rem;
     }
 
-    tr.done .status-toggle span {
-      color: var(--success);
-      font-weight: 600;
+    .dashboard-chart-grid {
+      display: grid;
+      gap: 20px;
+    }
+
+    @media (min-width: 1024px) {
+      .dashboard-chart-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .chart-card {
+      background: rgba(15, 23, 42, 0.45);
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 280px;
+    }
+
+    .chart-card h3 {
+      margin: 0;
+      font-size: 1.05rem;
+      color: var(--accent);
+    }
+
+    .chart-card small {
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+    }
+
+    .chart-block {
+      flex: 1;
+      position: relative;
+    }
+
+    .chart-block > div {
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-block .chart-placeholder {
+      height: 100%;
     }
 
     .planner-panel {
@@ -1469,6 +1644,171 @@
       color: rgba(226, 232, 240, 0.7);
     }
 
+    .visibility-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 18px;
+      align-items: flex-end;
+    }
+
+    .visibility-controls .control {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 160px;
+    }
+
+    .visibility-controls label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .visibility-controls input,
+    .visibility-controls select {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+
+    .visibility-batch {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .visibility-table-wrapper {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(15, 23, 42, 0.45);
+    }
+
+    .visibility-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    .visibility-table thead {
+      background: rgba(30, 41, 59, 0.8);
+    }
+
+    .visibility-table th,
+    .visibility-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(71, 85, 105, 0.35);
+      text-align: left;
+    }
+
+    .visibility-table tbody tr:hover {
+      background: rgba(51, 65, 85, 0.35);
+    }
+
+    .visibility-status {
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .visibility-status.hidden {
+      color: #f97316;
+    }
+
+    .visibility-status.visible {
+      color: #22d3ee;
+    }
+
+    .visibility-empty {
+      padding: 32px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .visibility-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 42px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(148, 163, 184, 0.4);
+      transition: 0.2s;
+      border-radius: 999px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: '';
+      height: 18px;
+      width: 18px;
+      left: 4px;
+      bottom: 3px;
+      background-color: #0f172a;
+      transition: 0.2s;
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.6);
+    }
+
+    .switch input:checked + .slider {
+      background-color: rgba(59, 130, 246, 0.7);
+    }
+
+    .switch input:checked + .slider:before {
+      transform: translateX(16px);
+      background: #f8fafc;
+    }
+
+    .switch input:disabled + .slider {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .queue-badge,
+    .visibility-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: rgba(248, 113, 113, 0.18);
+      color: #fca5a5;
+      margin-left: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .visibility-table .mini-note {
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
     .pri-main {
       font-weight: 600;
       color: var(--text-primary);
@@ -1855,11 +2195,6 @@
       }
     }
 
-    /* Chart Container */
-    #chartContainer {
-      min-height: 400px;
-      margin-top: 20px;
-    }
   </style>
 </head>
 <body>
@@ -1901,11 +2236,69 @@
           <div class="kpi-value" id="kpiProximos7d">-</div>
           <div class="kpi-label">Próximos 7 Dias</div>
         </div>
+        <div class="kpi-card">
+          <div class="kpi-value" id="kpiQuestoesTotal">-</div>
+          <div class="kpi-label">Questões Totais</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value" id="kpiAcertosTotal">-</div>
+          <div class="kpi-label">Acertos Totais</div>
+        </div>
       </div>
 
-      <div class="card">
-        <h2>Desempenho por Área</h2>
-        <div id="chartContainer"></div>
+      <div class="card" id="dashboardAnalytics">
+        <div class="card-header-inline" style="margin-bottom: 18px;">
+          <div>
+            <h2>Dashboard Analítico</h2>
+            <p class="helper-text">Combine filtros para entender seus acertos por área, subárea e ao longo do tempo.</p>
+          </div>
+        </div>
+        <div class="dashboard-controls">
+          <div class="dashboard-filter-group">
+            <label for="dashAreaFilter">Área</label>
+            <select id="dashAreaFilter">
+              <option value="ALL">Todas as áreas</option>
+            </select>
+          </div>
+          <div class="dashboard-filter-group">
+            <label for="dashWindow">Janela</label>
+            <select id="dashWindow">
+              <option value="7">7 dias</option>
+              <option value="14">14 dias</option>
+              <option value="28" selected>28 dias</option>
+              <option value="56">56 dias</option>
+            </select>
+          </div>
+          <div class="dashboard-filter-group">
+            <label for="dashAgg">Agregação</label>
+            <select id="dashAgg">
+              <option value="daily" selected>Diário</option>
+              <option value="weekly">Semanal</option>
+            </select>
+          </div>
+        </div>
+        <div class="dashboard-chart-grid">
+          <div class="chart-card">
+            <div>
+              <h3 id="chartBarsTitle">Acertos por Área</h3>
+              <small id="chartBarsSubtitle">Compare áreas ou subáreas conforme o filtro aplicado.</small>
+            </div>
+            <div class="chart-block">
+              <div id="chart_barras_area" style="display: none;"></div>
+              <div id="chartBarsPlaceholder" class="chart-placeholder">Carregando gráfico...</div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div>
+              <h3 id="chartLineTitle">Progressão Temporal</h3>
+              <small id="chartLineSubtitle">Acompanhe a evolução da taxa de acerto na janela selecionada.</small>
+            </div>
+            <div class="chart-block">
+              <div id="chart_linha_progresso" style="display: none;"></div>
+              <div id="chartLinePlaceholder" class="chart-placeholder">Carregando gráfico...</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -2011,25 +2404,41 @@
                     <span id="policyEvi" class="policy-subtext">EVI médio: —</span>
                   </div>
                 </div>
-                <button class="btn btn-secondary" onclick="gerarFilaHoje()">🔄 Gerar Fila</button>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                  <label for="reviewDailyQuestionsInput" class="helper-text" style="margin:0;">Questões/dia</label>
+                  <input type="number" id="reviewDailyQuestionsInput" min="1" step="1" value="50" style="width:90px;">
+                  <button id="btnRevisoesGerar" class="btn btn-secondary">🔄 Gerar lista</button>
+                </div>
               </div>
-              <p class="helper-text">Avance na sequência, use a coluna de status para marcar o que já foi estudado e registre a revisão quando terminar.</p>
+              <div class="review-summary">
+                <div class="summary-card" id="summaryPendencias">
+                  <h4>Pendências do dia</h4>
+                  <div class="summary-metric" id="summaryPendenciasTotal">—</div>
+                  <div class="summary-subtext" id="summaryPendenciasTempo">Tempo estimado: —</div>
+                </div>
+                <div class="summary-card" id="summaryAreas">
+                  <h4>Distribuição por área</h4>
+                  <div id="chartDistribuicao" style="height: 200px; display: none;"></div>
+                  <div id="chartDistribuicaoPlaceholder" class="chart-placeholder">Carregando gráfico...</div>
+                </div>
+              </div>
+              <p class="helper-text">Avance na sequência, conclua as revisões e registre os resultados sem perder o controle da fila.</p>
               <div style="overflow-x: auto;">
                 <table id="filaTable" class="reviews-table">
                   <thead>
                     <tr>
                       <th class="col-alvo">Alvo</th>
-                      <th class="col-pri">Pri</th>
+                      <th class="col-pri">Prioridade</th>
                       <th class="col-s">S</th>
-                      <th class="col-t">t (dias)</th>
-                      <th class="col-evi" id="colEviHeader">EVI/min</th>
-                      <th class="col-alloc">Alocação</th>
-                      <th class="col-delta">ΔR (%)</th>
-                      <th class="col-status">Status</th>
+                      <th class="col-r">R(hoje)</th>
+                      <th class="col-overdue">Overdue</th>
+                      <th class="col-tempo">Tempo (min)</th>
+                      <th class="col-questoes">Questões</th>
+                      <th class="col-acoes">Ações</th>
                     </tr>
                   </thead>
                   <tbody id="filaBody">
-                    <tr><td colspan="8" class="empty-state">Clique em "Gerar Fila" para carregar</td></tr>
+                    <tr><td colspan="8" class="empty-state">Clique em "Gerar lista" para carregar as revisões de hoje.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -2440,6 +2849,48 @@
         </div>
       </div>
 
+      <div class="card" id="visibilityManager">
+        <h2>Visibilidade de Alvos</h2>
+        <p class="helper-text">Congele temporariamente uma subárea para retirá-la das revisões do dia. Você pode reativar quando quiser e o sistema recalcula a próxima revisão a partir de hoje.</p>
+
+        <div class="visibility-controls">
+          <div class="control">
+            <label for="visibilityAreaFilter">Área</label>
+            <select id="visibilityAreaFilter">
+              <option value="ALL">Todas as áreas</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="visibilitySearch">Buscar alvo</label>
+            <input type="text" id="visibilitySearch" placeholder="Ex: CLINICA::CARDIO">
+          </div>
+          <div class="control visibility-batch">
+            <button id="btnVisibilityFreezeArea" class="btn btn-secondary btn-small" disabled>Congelar área inteira</button>
+            <button id="btnVisibilityUnfreezeArea" class="btn btn-secondary btn-small" disabled>Descongelar área inteira</button>
+            <button id="btnVerifyReviews" class="btn btn-secondary btn-small">Verificar revisões</button>
+          </div>
+        </div>
+
+        <div class="visibility-table-wrapper">
+          <table class="visibility-table">
+            <thead>
+              <tr>
+                <th style="width: 70px;">Ativo</th>
+                <th>Alvo</th>
+                <th>Status</th>
+                <th>Desde</th>
+                <th>Próxima revisão</th>
+                <th style="width: 200px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="visibilityTableBody"></tbody>
+          </table>
+          <div id="visibilityEmpty" class="visibility-empty" style="display:none;">
+            Nenhum alvo encontrado com os filtros atuais.
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Como Funciona o Algoritmo</h2>
 
@@ -2601,6 +3052,10 @@
             <input type="number" id="setPlanGainMix" step="0.05" min="0" max="1">
           </div>
           <div class="form-group">
+            <label>Questões diárias de revisão</label>
+            <input type="number" id="setReviewDailyQuestions" min="1" step="1">
+          </div>
+          <div class="form-group">
             <label>κ (Pri → ΔR%)</label>
             <input type="number" id="setKappaPriDelta" step="0.05" min="0">
           </div>
@@ -2678,6 +3133,25 @@
       </div>
 
       <div class="card">
+        <h2>Dias de descanso</h2>
+        <p class="helper-text">Adicione datas sem revisão. O sistema remove essas datas do calendário e empurra revisões para o próximo dia útil.</p>
+        <div class="settings-grid" style="margin-bottom: 10px;">
+          <div class="form-group">
+            <label>Data de descanso</label>
+            <input type="date" id="restDayDate">
+          </div>
+          <div class="form-group">
+            <label>Observação (opcional)</label>
+            <input type="text" id="restDayNote" placeholder="Ex: plantão, viagem">
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+          <button class="btn btn-secondary" onclick="adicionarDiaDescanso()">➕ Adicionar descanso</button>
+        </div>
+        <div id="restDaysList" class="helper-text">Nenhum dia de descanso cadastrado.</div>
+      </div>
+
+      <div class="card">
         <h2>Diagnóstico</h2>
         <p class="helper-text">As estatísticas são recalculadas sempre que você salva um bloco ou registra uma revisão.</p>
         <button class="btn btn-secondary" onclick="mostrarDiagnostico()">📊 Info da Planilha</button>
@@ -2704,7 +3178,11 @@
     // ========================================================================
     let currentSettings = {};
     let reviewQueue = [];
+    let currentReviewDate = null;
+    let reviewDoneState = {};
+    let reviewModalTarget = null;
     let calendarCache = [];
+    let restDaysCache = [];
     let plannerAllocations = new Map();
     let plannerAreas = [];
     let plannerSummary = { budget: 0, allocated: 0, delta: 0, mode: 'classic' };
@@ -2713,6 +3191,41 @@
     let weeklyPlanData = null;
     let retrospectiveSnapshot = null;
     let modeComparisonResult = null;
+    let dashboardAreas = [];
+    let dashboardAreaMap = {};
+    let dashboardAreaSelection = 'ALL';
+    let dashboardWindowDays = 28;
+    let dashboardAggMode = 'daily';
+    // ChartLoader singleton garante carregamento único do Google Charts.
+    window.ChartLoader = (function() {
+      let ready = null;
+      function ensure() {
+        if (ready) return ready;
+        ready = new Promise((resolve) => {
+          if (window.google && google.charts && google.visualization) {
+            resolve();
+            return;
+          }
+          google.charts.load('current', { packages: ['corechart', 'table'] });
+          google.charts.setOnLoadCallback(() => resolve());
+        });
+        return ready;
+      }
+      return { ensure };
+    })();
+    let dashboardBarChart = null;
+    let dashboardLineChart = null;
+    let dashboardBarsRequestId = 0;
+    let dashboardLineRequestId = 0;
+    let dashboardBarDataCache = { rows: [], title: 'Acertos por Área', area: 'ALL', emptyMessage: 'Sem dados disponíveis.' };
+    let dashboardLineDataCache = { series: [], title: 'Progressão Temporal', area: 'ALL', meta: { window: 28, agg: 'daily' }, emptyMessage: 'Sem dados suficientes para o período.' };
+    let visibilityTargets = [];
+    let visibilityAreaList = [];
+    let visibilityAreaMapData = {};
+    let visibilityCurrentArea = 'ALL';
+    let visibilitySearchTerm = '';
+    let visibilityLoading = false;
+    let overlayDepth = 0;
 
     const alvoSuggestionSet = new Set();
     const areaSuggestionSet = new Set();
@@ -2734,16 +3247,126 @@
     const dayDetailsTitleEl = document.getElementById('dayDetailsTitle');
     const dayDetailsSubtitleEl = document.getElementById('dayDetailsSubtitle');
     const dayDetailsContentEl = document.getElementById('dayDetailsContent');
+    const reviewModalOverlayEl = document.getElementById('reviewModalOverlay');
+    const reviewModalEl = document.getElementById('reviewModal');
+    const dashAreaSelect = document.getElementById('dashAreaFilter');
+    const dashWindowSelect = document.getElementById('dashWindow');
+    const dashAggSelect = document.getElementById('dashAgg');
+    const btnRevisoesGerar = document.getElementById('btnRevisoesGerar');
+    const visibilityAreaFilter = document.getElementById('visibilityAreaFilter');
+    const visibilitySearchInput = document.getElementById('visibilitySearch');
+    const btnVisibilityFreezeArea = document.getElementById('btnVisibilityFreezeArea');
+    const btnVisibilityUnfreezeArea = document.getElementById('btnVisibilityUnfreezeArea');
+    const btnVerifyReviews = document.getElementById('btnVerifyReviews');
+    const visibilityTableBody = document.getElementById('visibilityTableBody');
+    const visibilityEmptyEl = document.getElementById('visibilityEmpty');
+
+    if (dashWindowSelect) {
+      dashboardWindowDays = Number(dashWindowSelect.value) || dashboardWindowDays;
+    }
+
+    if (dashAggSelect) {
+      dashboardAggMode = (dashAggSelect.value || 'daily');
+    }
 
     if (drawerOverlayEl) {
       drawerOverlayEl.addEventListener('click', closeDayDetails);
     }
 
+    if (reviewModalOverlayEl) {
+      reviewModalOverlayEl.addEventListener('click', fecharReviewModal);
+    }
+
     document.addEventListener('keydown', function(event) {
       if (event.key === 'Escape') {
         closeDayDetails();
+        fecharReviewModal();
       }
     });
+
+    if (dashAreaSelect) {
+      dashAreaSelect.addEventListener('change', function() {
+        const selected = this.value || 'ALL';
+        atualizarGraficosDashboard(selected);
+      });
+    }
+
+    if (dashWindowSelect) {
+      dashWindowSelect.addEventListener('change', function() {
+        dashboardWindowDays = Number(this.value) || 28;
+        atualizarGraficoLinhaDashboard();
+      });
+    }
+
+    if (dashAggSelect) {
+      dashAggSelect.addEventListener('change', function() {
+        dashboardAggMode = (this.value || 'daily');
+        atualizarGraficoLinhaDashboard();
+      });
+    }
+
+    if (btnRevisoesGerar) {
+      btnRevisoesGerar.addEventListener('click', function() {
+        gerarFilaHoje();
+      });
+    }
+
+    if (visibilityAreaFilter) {
+      visibilityAreaFilter.addEventListener('change', function() {
+        visibilityCurrentArea = (this.value || 'ALL').trim() || 'ALL';
+        renderVisibilityTable();
+      });
+    }
+
+    const handleVisibilitySearch = debounce(function(value) {
+      visibilitySearchTerm = (value || '').toLowerCase();
+      renderVisibilityTable();
+    }, 200);
+
+    if (visibilitySearchInput) {
+      visibilitySearchInput.addEventListener('input', function() {
+        handleVisibilitySearch(this.value || '');
+      });
+    }
+
+    if (btnVisibilityFreezeArea) {
+      btnVisibilityFreezeArea.addEventListener('click', function() {
+        const targets = getFilteredVisibilityTargets().filter(item => !item.hidden).map(item => item.alvo);
+        if (targets.length === 0) {
+          toast('Todos os alvos desta área já estão congelados.', 'info');
+          return;
+        }
+        applyBatchVisibility(targets, true);
+      });
+    }
+
+    if (btnVisibilityUnfreezeArea) {
+      btnVisibilityUnfreezeArea.addEventListener('click', function() {
+        const targets = getFilteredVisibilityTargets().filter(item => item.hidden).map(item => item.alvo);
+        if (targets.length === 0) {
+          toast('Nenhum alvo congelado nesta área.', 'info');
+          return;
+        }
+        applyBatchVisibility(targets, false);
+      });
+    }
+
+    function getEffectiveDashboardArea(areaOverride) {
+      const override = (typeof areaOverride === 'string' && areaOverride.length) ? areaOverride : null;
+      const selectValue = dashAreaSelect && dashAreaSelect.value ? dashAreaSelect.value : '';
+      let resolved = override || selectValue || dashboardAreaSelection || 'ALL';
+      resolved = String(resolved || '').trim();
+      if (!resolved) {
+        resolved = 'ALL';
+      } else if (resolved.toUpperCase() === 'ALL') {
+        resolved = 'ALL';
+      }
+      dashboardAreaSelection = resolved;
+      if (dashAreaSelect && dashAreaSelect.value !== resolved) {
+        dashAreaSelect.value = resolved;
+      }
+      return resolved;
+    }
 
     function toBool(value) {
       return value === true || value === 'true' || value === 1 || value === '1';
@@ -2752,6 +3375,350 @@
     function clampValue(value, min, max) {
       if (isNaN(value)) return min;
       return Math.min(max, Math.max(min, value));
+    }
+
+    function debounce(fn, wait) {
+      let timeoutId = null;
+      return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn.apply(this, args), wait);
+      };
+    }
+
+    function populateVisibilityAreas() {
+      if (!visibilityAreaFilter) return;
+      const previous = visibilityCurrentArea || 'ALL';
+      visibilityAreaFilter.innerHTML = '<option value="ALL">Todas as áreas</option>';
+      const areas = Array.isArray(visibilityAreaList) ? visibilityAreaList.slice().sort() : [];
+      areas.forEach(area => {
+        if (!area) return;
+        const option = document.createElement('option');
+        option.value = area;
+        option.textContent = area;
+        visibilityAreaFilter.appendChild(option);
+      });
+      const targetValue = areas.includes(previous) ? previous : 'ALL';
+      visibilityCurrentArea = targetValue;
+      visibilityAreaFilter.value = targetValue;
+      updateVisibilityBatchButtons();
+    }
+
+    function loadVisibilityData(options = {}) {
+      if (!visibilityTableBody) return;
+      const args = options && options.skipOverlay ? { __skipOverlay: true } : {};
+      visibilityLoading = true;
+      renderVisibilityTable();
+      run('apiListTargetsForVisibility', args, function(res) {
+        visibilityLoading = false;
+        const targets = Array.isArray(res && res.targets) ? res.targets : [];
+        visibilityTargets = targets.map(target => {
+          const alvo = (target && target.alvo) ? `${target.alvo}`.trim() : '';
+          const area = target && target.area ? `${target.area}`.trim() : '—';
+          const subarea = target && target.subarea ? `${target.subarea}`.trim() : '';
+          return {
+            alvo,
+            area,
+            subarea,
+            hidden: toBool(target && target.hidden),
+            hidden_since: target && target.hidden_since ? `${target.hidden_since}` : '',
+            searchIndex: `${alvo}`.toLowerCase()
+          };
+        });
+        visibilityAreaList = Array.isArray(res && res.areas) ? res.areas : [];
+        visibilityAreaMapData = res && res.map ? res.map : {};
+        populateVisibilityAreas();
+        renderVisibilityTable();
+      }, function(error) {
+        visibilityLoading = false;
+        renderVisibilityTable();
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Falha ao carregar visibilidade: ' + message, 'error');
+      });
+    }
+
+    function getFilteredVisibilityTargets() {
+      const term = (visibilitySearchTerm || '').trim();
+      const filtered = (visibilityTargets || []).filter(item => {
+        if (!item || !item.alvo) return false;
+        if (visibilityCurrentArea && visibilityCurrentArea !== 'ALL' && item.area !== visibilityCurrentArea) {
+          return false;
+        }
+        if (!term) return true;
+        const lower = term.toLowerCase();
+        return item.searchIndex.indexOf(lower) >= 0
+          || (item.area && item.area.toLowerCase().indexOf(lower) >= 0)
+          || (item.subarea && item.subarea.toLowerCase().indexOf(lower) >= 0);
+      });
+      filtered.sort((a, b) => {
+        if (a.area === b.area) {
+          return a.alvo.localeCompare(b.alvo);
+        }
+        return a.area.localeCompare(b.area);
+      });
+      return filtered;
+    }
+
+    function updateVisibilityBatchButtons() {
+      const filtered = getFilteredVisibilityTargets();
+      if (btnVisibilityFreezeArea) {
+        const disabled = visibilityLoading || visibilityCurrentArea === 'ALL' || !filtered.some(item => !item.hidden);
+        btnVisibilityFreezeArea.disabled = disabled;
+      }
+      if (btnVisibilityUnfreezeArea) {
+        const disabled = visibilityLoading || visibilityCurrentArea === 'ALL' || !filtered.some(item => item.hidden);
+        btnVisibilityUnfreezeArea.disabled = disabled;
+      }
+    }
+
+    function formatVisibilityDate(value) {
+      if (!value) return '—';
+      try {
+        return formatShortDate(value);
+      } catch (err) {
+        return value;
+      }
+    }
+
+    function renderVisibilityTable() {
+      if (!visibilityTableBody) return;
+      const filtered = getFilteredVisibilityTargets();
+      visibilityTableBody.innerHTML = '';
+      updateVisibilityBatchButtons();
+
+      if (!filtered.length) {
+        if (visibilityEmptyEl) {
+          visibilityEmptyEl.textContent = visibilityLoading
+            ? 'Carregando…'
+            : 'Nenhum alvo encontrado com os filtros atuais.';
+          visibilityEmptyEl.style.display = 'block';
+        }
+        return;
+      }
+
+      if (visibilityEmptyEl) {
+        visibilityEmptyEl.style.display = 'none';
+      }
+
+      filtered.forEach(target => {
+        const row = document.createElement('tr');
+        const toggleCell = document.createElement('td');
+        const statusCell = document.createElement('td');
+        const stateCell = document.createElement('td');
+        const sinceCell = document.createElement('td');
+        const nextReviewCell = document.createElement('td');
+        const actionsCell = document.createElement('td');
+
+        const isHidden = !!target.hidden;
+
+        const switchLabel = document.createElement('label');
+        switchLabel.className = 'switch';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = !isHidden;
+        input.disabled = visibilityLoading;
+        input.addEventListener('change', function() {
+          const shouldHide = !this.checked;
+          input.checked = !shouldHide;
+          handleVisibilityToggle(target.alvo, shouldHide);
+        });
+        const slider = document.createElement('span');
+        slider.className = 'slider';
+        switchLabel.appendChild(input);
+        switchLabel.appendChild(slider);
+        toggleCell.appendChild(switchLabel);
+
+        const alvoLabel = document.createElement('div');
+        alvoLabel.className = 'pri-main';
+        alvoLabel.textContent = target.alvo || '—';
+        if (isHidden) {
+          const badge = document.createElement('span');
+          badge.className = 'visibility-badge';
+          badge.textContent = 'Congelado';
+          alvoLabel.appendChild(badge);
+        }
+        const subLabel = document.createElement('div');
+        subLabel.className = 'mini-note';
+        subLabel.textContent = target.area ? `${target.area}${target.subarea ? ' • ' + target.subarea : ''}` : '—';
+        statusCell.appendChild(alvoLabel);
+        statusCell.appendChild(subLabel);
+
+        stateCell.className = `visibility-status ${isHidden ? 'hidden' : 'visible'}`;
+        stateCell.textContent = isHidden ? 'Congelado' : 'Visível';
+
+        sinceCell.textContent = isHidden ? formatVisibilityDate(target.hidden_since) : '—';
+        nextReviewCell.textContent = target.proximaRevisao ? formatVisibilityDate(target.proximaRevisao) : '—';
+
+        const actionsWrapper = document.createElement('div');
+        actionsWrapper.className = 'visibility-actions';
+        const freezeBtn = document.createElement('button');
+        freezeBtn.className = 'btn btn-secondary btn-small';
+        freezeBtn.textContent = 'Congelar';
+        freezeBtn.disabled = visibilityLoading || isHidden;
+        freezeBtn.addEventListener('click', function() {
+          handleVisibilityToggle(target.alvo, true);
+        });
+        const unfreezeBtn = document.createElement('button');
+        unfreezeBtn.className = 'btn btn-primary btn-small';
+        unfreezeBtn.textContent = 'Descongelar';
+        unfreezeBtn.disabled = visibilityLoading || !isHidden;
+        unfreezeBtn.addEventListener('click', function() {
+          handleVisibilityToggle(target.alvo, false);
+        });
+        actionsWrapper.appendChild(freezeBtn);
+        actionsWrapper.appendChild(unfreezeBtn);
+        actionsCell.appendChild(actionsWrapper);
+
+        row.appendChild(toggleCell);
+        row.appendChild(statusCell);
+        row.appendChild(stateCell);
+        row.appendChild(sinceCell);
+        row.appendChild(nextReviewCell);
+        row.appendChild(actionsCell);
+        visibilityTableBody.appendChild(row);
+      });
+    }
+
+    function updateVisibilityStateForTargets(targetIds, hidden, dateISO) {
+      if (!Array.isArray(targetIds)) return;
+      const dateValue = hidden ? (dateISO || new Date().toISOString().slice(0, 10)) : '';
+      const idSet = new Set(targetIds);
+      visibilityTargets = visibilityTargets.map(item => {
+        if (!item || !idSet.has(item.alvo)) return item;
+        return Object.assign({}, item, {
+          hidden,
+          hidden_since: hidden ? dateValue : '',
+          searchIndex: item.searchIndex
+        });
+      });
+    }
+
+    if (btnVerifyReviews) {
+      btnVerifyReviews.addEventListener('click', function() {
+        run('apiVerifyReviewCoverage', {}, function(result) {
+          const missing = Number(result && result.missing) || 0;
+          const invalid = Number(result && result.invalidTargets) || 0;
+          const queueCount = Number(result && result.queueCount) || 0;
+          toast(`Verificação concluída: ${queueCount} alvo(s) na fila, ${missing} ausente(s), ${invalid} inválido(s).`, 'success');
+          loadVisibilityData({ skipOverlay: true });
+          carregarDadosDashboard();
+          atualizarFilaHojeSilencioso(false);
+        });
+      });
+    }
+
+    function handleVisibilityToggle(alvo, shouldHide) {
+      if (!alvo) return;
+      visibilityLoading = true;
+      renderVisibilityTable();
+      const endpoint = shouldHide ? 'apiHideTargets' : 'apiUnhideTargets';
+      run(endpoint, { targets: [alvo] }, function(res) {
+        visibilityLoading = false;
+        const dateIso = res && res.date ? res.date : new Date().toISOString().slice(0, 10);
+        updateVisibilityStateForTargets([alvo], shouldHide, dateIso);
+        renderVisibilityTable();
+        toast(shouldHide ? `Alvo ${alvo} congelado.` : `Alvo ${alvo} reativado.`, 'success');
+      }, function(error) {
+        visibilityLoading = false;
+        renderVisibilityTable();
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Falha na operação: ' + message, 'error');
+      });
+    }
+
+    function applyBatchVisibility(targets, shouldHide) {
+      if (!Array.isArray(targets) || targets.length === 0) {
+        return;
+      }
+      visibilityLoading = true;
+      renderVisibilityTable();
+      const endpoint = shouldHide ? 'apiHideTargets' : 'apiUnhideTargets';
+      run(endpoint, { targets: targets.slice() }, function(res) {
+        visibilityLoading = false;
+        const dateIso = res && res.date ? res.date : new Date().toISOString().slice(0, 10);
+        updateVisibilityStateForTargets(targets, shouldHide, dateIso);
+        renderVisibilityTable();
+        const message = shouldHide
+          ? `Congelado ${targets.length} alvo(s).`
+          : `Reativado ${targets.length} alvo(s).`;
+        toast(message, 'success');
+      }, function(error) {
+        visibilityLoading = false;
+        renderVisibilityTable();
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Falha na operação: ' + message, 'error');
+      });
+    }
+
+    const REVIEW_DONE_KEY = 'revisoesDone';
+
+    function loadReviewDoneState(dateISO) {
+      if (!dateISO) return {};
+      try {
+        const raw = localStorage.getItem(REVIEW_DONE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && parsed[dateISO]) {
+          const state = parsed[dateISO];
+          if (state && typeof state === 'object') {
+            return Object.assign({}, state);
+          }
+        }
+      } catch (err) {
+        console.warn('Falha ao carregar revisoesDone:', err);
+      }
+      return {};
+    }
+
+    function persistReviewDoneState(dateISO, state) {
+      if (!dateISO) return;
+      let storage = {};
+      try {
+        const raw = localStorage.getItem(REVIEW_DONE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            storage = parsed;
+          }
+        }
+      } catch (err) {
+        storage = {};
+      }
+      storage[dateISO] = state;
+      try {
+        localStorage.setItem(REVIEW_DONE_KEY, JSON.stringify(storage));
+      } catch (err) {
+        console.warn('Não foi possível salvar revisoesDone:', err);
+      }
+    }
+
+    function setReviewDoneLocal(dateISO, alvo, done) {
+      if (!dateISO || !alvo) return;
+      if (!reviewDoneState) {
+        reviewDoneState = {};
+      }
+      if (done) {
+        reviewDoneState[alvo] = true;
+      } else if (reviewDoneState.hasOwnProperty(alvo)) {
+        delete reviewDoneState[alvo];
+      }
+      const cleanState = {};
+      Object.keys(reviewDoneState).forEach(key => {
+        if (reviewDoneState[key]) {
+          cleanState[key] = true;
+        }
+      });
+      persistReviewDoneState(dateISO, cleanState);
+    }
+
+    function isReviewMarkedLocal(alvo) {
+      if (!alvo) return false;
+      return !!(reviewDoneState && reviewDoneState[alvo]);
     }
 
     function getAreaFromAlvo(alvo, fallback = '—') {
@@ -2767,6 +3734,97 @@
     // ========================================================================
     function setLoading(show) {
       document.getElementById('loadingOverlay').classList.toggle('active', show);
+    }
+
+    function showOverlay() {
+      overlayDepth += 1;
+      setLoading(true);
+    }
+
+    function hideOverlay() {
+      overlayDepth = Math.max(0, overlayDepth - 1);
+      if (overlayDepth === 0) {
+        setLoading(false);
+      }
+    }
+
+    // Helper padrão para chamadas GAS com overlay e toasts.
+    function run(name, args, onOk, onError) {
+      if (!name) {
+        console.error('run: nome de função inválido.');
+        return;
+      }
+      let overlayEnabled = true;
+      let payload = args;
+      if (payload && typeof payload === 'object' && payload.__skipOverlay) {
+        overlayEnabled = false;
+        payload = Object.assign({}, payload);
+        delete payload.__skipOverlay;
+      }
+      if (payload === undefined || payload === null) {
+        payload = {};
+      }
+      if (overlayEnabled) {
+        showOverlay();
+      }
+      try {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (overlayEnabled) {
+              hideOverlay();
+            }
+            if (!res || res.ok === false) {
+              const errMsg = res && res.error ? res.error : 'erro desconhecido';
+              console.error(name, errMsg);
+              if (typeof onError === 'function') {
+                try {
+                  onError(errMsg, res);
+                } catch (handlerErr) {
+                  console.error('Erro no error handler de ' + name + ':', handlerErr);
+                }
+              } else {
+                toast('Falha: ' + errMsg, 'error');
+              }
+              return;
+            }
+            if (typeof onOk === 'function') {
+              try {
+                onOk(res);
+              } catch (callbackError) {
+                console.error('Erro no handler de ' + name + ':', callbackError);
+              }
+            }
+          })
+          .withFailureHandler(function(err) {
+            if (overlayEnabled) {
+              hideOverlay();
+            }
+            console.error(name, err);
+            if (typeof onError === 'function') {
+              try {
+                onError(err);
+              } catch (handlerErr) {
+                console.error('Erro no error handler de ' + name + ':', handlerErr);
+              }
+            } else {
+              toast('Erro de comunicação com o servidor.', 'error');
+            }
+          })[name](payload || {});
+      } catch (callErr) {
+        if (overlayEnabled) {
+          hideOverlay();
+        }
+        console.error(name, callErr);
+        if (typeof onError === 'function') {
+          try {
+            onError(callErr);
+          } catch (handlerErr) {
+            console.error('Erro no error handler de ' + name + ':', handlerErr);
+          }
+        } else {
+          toast('Erro de comunicação com o servidor.', 'error');
+        }
+      }
     }
 
     function toast(message, type = 'success') {
@@ -2805,6 +3863,7 @@
       }
 
       if (pageId === 'dashboard') {
+        redesenharGraficosDashboard();
         loadDashboard();
       }
       if (pageId === 'ajustes') {
@@ -4182,10 +5241,15 @@
     // ========================================================================
     window.onload = function() {
       setLoading(true);
-      google.charts.load('current', {'packages':['corechart']});
-      google.charts.setOnLoadCallback(function() {
-        initApp();
-      });
+      ChartLoader.ensure()
+        .then(function() {
+          initApp();
+        })
+        .catch(function(err) {
+          console.error('Falha ao carregar Google Charts:', err);
+          toast('Não foi possível carregar os gráficos.', 'error');
+          setLoading(false);
+        });
     };
 
     function initApp() {
@@ -4244,18 +5308,21 @@
         })
         .apiGetStats();
 
-      // Load chart
       google.script.run
         .withSuccessHandler(function(result) {
-          if (result.ok && result.data.length > 1) {
-            drawChart(result.data);
-          } else {
-            document.getElementById('chartContainer').innerHTML = 
-              '<div class="empty-state"><p>Nenhum dado disponível para gráfico</p></div>';
+          if (result && result.ok) {
+            const questoesEl = document.getElementById('kpiQuestoesTotal');
+            const acertosEl = document.getElementById('kpiAcertosTotal');
+            if (questoesEl) questoesEl.textContent = Math.round(Number(result.totalQuestoes) || 0).toLocaleString('pt-BR');
+            if (acertosEl) acertosEl.textContent = Math.round(Number(result.totalAcertos) || 0).toLocaleString('pt-BR');
           }
         })
-        .withFailureHandler(handleError)
-        .apiChartData();
+        .withFailureHandler(function(error) {
+          console.warn('Não foi possível carregar totais globais:', error);
+        })
+        .apiDashboardTotals();
+
+      fetchDashboardAreas();
 
       // Load calendar
       google.script.run
@@ -4289,30 +5356,382 @@
         .apiMakeReviewToday();
     }
 
-    function drawChart(data) {
-      const chartData = google.visualization.arrayToDataTable(data);
+    function fetchDashboardAreas() {
+      exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Carregando gráfico...');
+      exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Carregando gráfico...');
+
+      run('apiDashboardAreas', {}, function(result) {
+        if (result && result.ok) {
+          dashboardAreas = Array.isArray(result.areas) ? result.areas : [];
+          dashboardAreaMap = result.map || {};
+        } else {
+          dashboardAreas = [];
+          dashboardAreaMap = {};
+          toast('Não foi possível carregar áreas para os filtros', 'warning');
+        }
+        populateDashboardAreaSelect();
+        atualizarGraficosDashboard(dashboardAreaSelection);
+      }, function(error) {
+        console.error('Erro ao carregar áreas do dashboard:', error);
+        toast('Erro ao carregar filtros de áreas', 'error');
+        dashboardAreas = [];
+        dashboardAreaMap = {};
+        populateDashboardAreaSelect();
+        atualizarGraficosDashboard(dashboardAreaSelection);
+      });
+    }
+
+    function populateDashboardAreaSelect() {
+      if (!dashAreaSelect) return;
+      const previous = dashboardAreaSelection || 'ALL';
+      dashAreaSelect.innerHTML = '';
+
+      const optionAll = document.createElement('option');
+      optionAll.value = 'ALL';
+      optionAll.textContent = 'Todas as áreas';
+      dashAreaSelect.appendChild(optionAll);
+
+      dashboardAreas.forEach(area => {
+        const opt = document.createElement('option');
+        opt.value = area;
+        opt.textContent = area;
+        dashAreaSelect.appendChild(opt);
+      });
+
+      let resolved = 'ALL';
+      if (previous === 'ALL' || dashboardAreas.includes(previous)) {
+        resolved = previous;
+      }
+      dashAreaSelect.value = resolved;
+      dashboardAreaSelection = resolved;
+    }
+
+    function atualizarGraficosDashboard(areaOverride) {
+      const effectiveArea = getEffectiveDashboardArea(areaOverride);
+      atualizarGraficoBarrasDashboard(effectiveArea);
+      atualizarGraficoLinhaDashboard(effectiveArea);
+    }
+
+    async function drawBars(dataRows, title, elId) {
+      await ChartLoader.ensure();
+      const el = document.getElementById(elId);
+      if (!el) return false;
+
+      const percentFormatter = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      const rows = [];
+      (Array.isArray(dataRows) ? dataRows : []).forEach(item => {
+        if (!item) return;
+        const label = item.label || '—';
+        const taxa = item.taxa !== undefined && item.taxa !== null ? Number(item.taxa) : NaN;
+        const pct = isFinite(taxa) ? Math.max(0, Math.min(100, taxa * 100)) : 0;
+        const acertos = item.acertos !== undefined && item.acertos !== null ? Number(item.acertos) : 0;
+        const questoes = item.questoes !== undefined && item.questoes !== null ? Number(item.questoes) : 0;
+        const annotation = `${percentFormatter.format(pct)}%`;
+        const tooltip = `<div style="padding:6px 8px;"><strong>${label}</strong><br>Acertos ${acertos} / ${questoes} (${annotation})</div>`;
+        rows.push([label, parseFloat(pct.toFixed(2)), annotation, tooltip]);
+      });
+
+      if (!rows.length) {
+        return false;
+      }
+
+      const dataTable = new google.visualization.DataTable();
+      dataTable.addColumn('string', 'Categoria');
+      dataTable.addColumn('number', 'Taxa (%)');
+      dataTable.addColumn({ type: 'string', role: 'annotation' });
+      dataTable.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
+      dataTable.addRows(rows);
+
+      const numberFormatter = new google.visualization.NumberFormat({ suffix: '%', fractionDigits: 1 });
+      numberFormatter.format(dataTable, 1);
+
       const options = {
-        title: 'Taxa de Acerto por Área',
-        backgroundColor: '#1e293b',
-        titleTextStyle: { color: '#f1f5f9', fontSize: 16 },
+        title: title || 'Acertos por Área',
+        backgroundColor: 'transparent',
+        titleTextStyle: { color: '#f1f5f9', fontSize: 15 },
         legend: { position: 'none' },
+        focusTarget: 'category',
         hAxis: {
-          textStyle: { color: '#cbd5e1' },
-          titleTextStyle: { color: '#cbd5e1' }
+          textStyle: { color: '#cbd5e1' }
         },
         vAxis: {
-          title: 'Acerto (%)',
+          title: 'Taxa de acerto (%)',
           textStyle: { color: '#cbd5e1' },
           titleTextStyle: { color: '#cbd5e1' },
           minValue: 0,
-          maxValue: 100
+          maxValue: 100,
+          viewWindow: { min: 0, max: 100 },
+          gridlines: { color: 'rgba(148, 163, 184, 0.2)' }
         },
-        colors: ['#3b82f6'],
-        chartArea: { width: '80%', height: '70%' }
+        tooltip: { isHtml: true, textStyle: { color: '#0f172a' }, ignoreBounds: true },
+        annotations: {
+          textStyle: { color: '#f8fafc', fontSize: 12, auraColor: 'transparent' },
+          alwaysOutside: true
+        },
+        bar: { groupWidth: '60%' },
+        chartArea: { width: '78%', height: '68%' }
       };
 
-      const chart = new google.visualization.ColumnChart(document.getElementById('chartContainer'));
-      chart.draw(chartData, options);
+      dashboardBarChart = new google.visualization.ColumnChart(el);
+      dashboardBarChart.draw(dataTable, options);
+      return true;
+    }
+
+    async function drawLine(series, title, elId) {
+      await ChartLoader.ensure();
+      const el = document.getElementById(elId);
+      if (!el) return false;
+
+      const safeSeries = Array.isArray(series) ? series : [];
+      if (!safeSeries.length) {
+        return false;
+      }
+
+      const dateSet = new Set();
+      safeSeries.forEach(serie => {
+        (Array.isArray(serie.points) ? serie.points : []).forEach(point => {
+          if (point && point.date) {
+            dateSet.add(point.date);
+          }
+        });
+      });
+
+      if (dateSet.size === 0) {
+        return false;
+      }
+
+      const sortedDates = Array.from(dateSet).sort();
+      const dataTable = new google.visualization.DataTable();
+      dataTable.addColumn('date', 'Data');
+      safeSeries.forEach(serie => {
+        dataTable.addColumn('number', serie && serie.name ? serie.name : 'Série');
+      });
+
+      const dateRows = sortedDates.map(dateStr => {
+        const parts = dateStr.split('-').map(Number);
+        const dateObj = new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
+        dateObj.setHours(0, 0, 0, 0);
+        const row = [dateObj];
+        safeSeries.forEach(serie => {
+          const point = (Array.isArray(serie.points) ? serie.points : []).find(p => p.date === dateStr);
+          if (point && point.taxa !== undefined && point.taxa !== null) {
+            const pct = Math.max(0, Math.min(100, Number(point.taxa) * 100));
+            row.push(parseFloat(pct.toFixed(2)));
+          } else {
+            row.push(null);
+          }
+        });
+        return row;
+      });
+
+      dataTable.addRows(dateRows);
+
+      const numberFormatter = new google.visualization.NumberFormat({ suffix: '%', fractionDigits: 1 });
+      for (let col = 1; col < dataTable.getNumberOfColumns(); col++) {
+        numberFormatter.format(dataTable, col);
+      }
+
+      const baseColors = ['#facc15', '#38bdf8', '#22d3ee', '#fb7185', '#a855f7', '#34d399', '#f97316'];
+      const colors = baseColors.slice(0, Math.max(1, safeSeries.length));
+
+      const options = {
+        title: title || 'Progressão Temporal',
+        backgroundColor: 'transparent',
+        titleTextStyle: { color: '#f1f5f9', fontSize: 15 },
+        legend: { position: 'top', textStyle: { color: '#cbd5e1' } },
+        focusTarget: 'category',
+        hAxis: { textStyle: { color: '#cbd5e1' }, format: 'dd/MM' },
+        vAxis: {
+          title: 'Taxa de acerto (%)',
+          textStyle: { color: '#cbd5e1' },
+          titleTextStyle: { color: '#cbd5e1' },
+          minValue: 0,
+          maxValue: 100,
+          viewWindow: { min: 0, max: 100 },
+          format: "#'%'",
+          gridlines: { color: 'rgba(148, 163, 184, 0.2)' }
+        },
+        tooltip: { isHtml: false, textStyle: { color: '#0f172a' } },
+        lineWidth: 3,
+        pointSize: 5,
+        colors,
+        chartArea: { width: '78%', height: '68%' },
+        crosshair: { color: '#f8fafc', trigger: 'both' }
+      };
+
+      dashboardLineChart = new google.visualization.LineChart(el);
+      dashboardLineChart.draw(dataTable, options);
+      return true;
+    }
+
+    function atualizarGraficoBarrasDashboard(areaOverride) {
+      const area = getEffectiveDashboardArea(areaOverride);
+      const requestId = ++dashboardBarsRequestId;
+      exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Atualizando gráfico...');
+
+      run('apiChartBars', { area }, function(result) {
+        if (requestId !== dashboardBarsRequestId) return;
+
+        const titleText = result && result.label ? result.label : 'Acertos por Área';
+        const titleEl = document.getElementById('chartBarsTitle');
+        const subtitleEl = document.getElementById('chartBarsSubtitle');
+        if (titleEl) titleEl.textContent = titleText;
+        if (subtitleEl) {
+          subtitleEl.textContent = area === 'ALL'
+            ? 'Mostrando a taxa média de acertos por área.'
+            : `Mostrando subáreas da área ${area}.`;
+        }
+
+        const rows = result && Array.isArray(result.data) ? result.data : [];
+        dashboardBarDataCache = {
+          rows: rows.slice(),
+          title: titleText,
+          area,
+          emptyMessage: rows.length ? '' : 'Sem dados disponíveis.'
+        };
+
+        if (!rows.length) {
+          exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Sem dados disponíveis.');
+          return;
+        }
+
+        mostrarGrafico('chart_barras_area', 'chartBarsPlaceholder');
+        drawBars(rows, titleText, 'chart_barras_area').catch(function(err) {
+          console.error('Falha ao desenhar gráfico de barras:', err);
+          exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao desenhar gráfico.');
+        });
+      }, function(error) {
+        if (requestId !== dashboardBarsRequestId) return;
+        console.error('Erro ao carregar gráfico de barras:', error);
+        exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao carregar dados.');
+      });
+    }
+
+    function atualizarGraficoLinhaDashboard(areaOverride) {
+      const area = getEffectiveDashboardArea(areaOverride);
+      const requestId = ++dashboardLineRequestId;
+      exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Atualizando gráfico...');
+
+      run('apiChartLine', { area, windowDays: dashboardWindowDays, agg: dashboardAggMode }, function(result) {
+        if (requestId !== dashboardLineRequestId) return;
+
+        const titleText = result && result.label ? result.label : 'Progressão Temporal';
+        const titleEl = document.getElementById('chartLineTitle');
+        const subtitleEl = document.getElementById('chartLineSubtitle');
+        if (titleEl) titleEl.textContent = titleText;
+        if (subtitleEl) {
+          const windowLabel = dashboardWindowDays + ' dias';
+          const aggLabel = dashboardAggMode === 'weekly' ? 'agregação semanal' : 'agregação diária';
+          subtitleEl.textContent = `Taxa de acerto (${windowLabel}, ${aggLabel}).`;
+        }
+
+        const series = result && Array.isArray(result.series) ? result.series : [];
+        dashboardLineDataCache = {
+          series: series.map(serie => ({
+            name: serie && serie.name ? serie.name : '',
+            points: Array.isArray(serie && serie.points) ? serie.points.slice() : []
+          })),
+          title: titleText,
+          area,
+          meta: { window: dashboardWindowDays, agg: dashboardAggMode },
+          emptyMessage: series.length ? '' : 'Sem dados suficientes para o período.'
+        };
+
+        if (!series.length) {
+          exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Sem dados suficientes para o período.');
+          return;
+        }
+
+        mostrarGrafico('chart_linha_progresso', 'chartLinePlaceholder');
+        drawLine(series, titleText, 'chart_linha_progresso').catch(function(err) {
+          console.error('Falha ao desenhar gráfico de linha:', err);
+          exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao desenhar gráfico.');
+        });
+      }, function(error) {
+        if (requestId !== dashboardLineRequestId) return;
+        console.error('Erro ao carregar gráfico de linha:', error);
+        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao carregar dados.');
+      });
+    }
+
+    function redesenharGraficosDashboard() {
+      if (!isDashboardActive()) {
+        return;
+      }
+
+      if (dashboardBarDataCache.rows && dashboardBarDataCache.rows.length) {
+        const titleEl = document.getElementById('chartBarsTitle');
+        if (titleEl) titleEl.textContent = dashboardBarDataCache.title || 'Acertos por Área';
+        mostrarGrafico('chart_barras_area', 'chartBarsPlaceholder');
+        drawBars(dashboardBarDataCache.rows, dashboardBarDataCache.title, 'chart_barras_area').catch(function(err) {
+          console.error('Falha ao redesenhar barras:', err);
+          exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', 'Erro ao desenhar gráfico.');
+        });
+      } else {
+        exibirPlaceholderGrafico('chart_barras_area', 'chartBarsPlaceholder', dashboardBarDataCache.emptyMessage || 'Sem dados disponíveis.');
+      }
+
+      if (dashboardLineDataCache.series && dashboardLineDataCache.series.length) {
+        const titleEl = document.getElementById('chartLineTitle');
+        if (titleEl) titleEl.textContent = dashboardLineDataCache.title || 'Progressão Temporal';
+        mostrarGrafico('chart_linha_progresso', 'chartLinePlaceholder');
+        drawLine(dashboardLineDataCache.series, dashboardLineDataCache.title, 'chart_linha_progresso').catch(function(err) {
+          console.error('Falha ao redesenhar linha:', err);
+          exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', 'Erro ao desenhar gráfico.');
+        });
+      } else {
+        exibirPlaceholderGrafico('chart_linha_progresso', 'chartLinePlaceholder', dashboardLineDataCache.emptyMessage || 'Sem dados suficientes para o período.');
+      }
+    }
+
+    function isDashboardActive() {
+      const dashboardEl = document.getElementById('dashboard');
+      return dashboardEl && dashboardEl.classList.contains('active');
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      redesenharGraficosDashboard();
+    });
+
+    window.addEventListener('hashchange', function() {
+      redesenharGraficosDashboard();
+    });
+
+    window.addEventListener('resize', debounce(redesenharGraficosDashboard, 200));
+
+    function exibirPlaceholderGrafico(chartId, placeholderId, message) {
+      const chartEl = document.getElementById(chartId);
+      const placeholderEl = document.getElementById(placeholderId);
+      if (chartEl) {
+        chartEl.style.display = 'none';
+        try {
+          if (chartId === 'chart_barras_area' && dashboardBarChart && typeof dashboardBarChart.clearChart === 'function') {
+            dashboardBarChart.clearChart();
+            dashboardBarChart = null;
+          } else if (chartId === 'chart_linha_progresso' && dashboardLineChart && typeof dashboardLineChart.clearChart === 'function') {
+            dashboardLineChart.clearChart();
+            dashboardLineChart = null;
+          }
+        } catch (err) {
+          console.warn('Falha ao limpar gráfico antes do placeholder:', err);
+        }
+        chartEl.innerHTML = '';
+      }
+      if (placeholderEl) {
+        placeholderEl.style.display = 'flex';
+        placeholderEl.textContent = message || 'Sem dados.';
+      }
+    }
+
+    function mostrarGrafico(chartId, placeholderId) {
+      const chartEl = document.getElementById(chartId);
+      const placeholderEl = document.getElementById(placeholderId);
+      if (chartEl) {
+        chartEl.style.display = 'block';
+      }
+      if (placeholderEl) {
+        placeholderEl.style.display = 'none';
+      }
     }
 
     function renderCalendar(data) {
@@ -4339,6 +5758,14 @@
           ? dateObj.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
           : '';
         const quantidade = Number(item.quantidade) || 0;
+        const descanso = !!item.descanso;
+        const alvos = Array.isArray(item.alvos) ? item.alvos.filter(Boolean) : [];
+        if (descanso) {
+          card.style.borderColor = 'rgba(234, 179, 8, 0.45)';
+        }
+        const alvosPreview = !descanso && alvos.length
+          ? `<div class="helper-text" style="margin-top:8px;">${alvos.slice(0, 3).join(', ')}${alvos.length > 3 ? ' +' + (alvos.length - 3) : ''}</div>`
+          : '';
 
         card.innerHTML = `
           <div class="calendar-date">
@@ -4346,12 +5773,13 @@
             <strong>${dateStr}</strong>
           </div>
           <div class="calendar-count">
-            <span>${quantidade === 1 ? 'Revisão prevista' : 'Revisões previstas'}</span>
-            <strong>${quantidade}</strong>
+            <span>${descanso ? 'Dia de descanso' : (quantidade === 1 ? 'Revisão prevista' : 'Revisões previstas')}</span>
+            <strong>${descanso ? '—' : quantidade}</strong>
           </div>
           <div class="calendar-actions">
-            <button class="btn btn-secondary btn-small" onclick="verDetalhesData('${item.data}')">Ver detalhes</button>
+            ${descanso ? '<span class="helper-text">Sem revisões nesse dia</span>' : `<button class="btn btn-secondary btn-small" onclick="verDetalhesData('${item.data}')">Ver detalhes</button>`}
           </div>
+          ${alvosPreview}
         `;
 
         container.appendChild(card);
@@ -4703,118 +6131,126 @@
         });
       }
 
-      let timeoutId = null;
-
-      if (!silent) {
-        setLoading(true);
-        timeoutId = setTimeout(function() {
-          setLoading(false);
-          toast('Tempo esgotado ao gerar fila. Tente novamente.', 'warning');
-          document.getElementById('filaBody').innerHTML =
-            '<tr><td colspan="8" class="empty-state">Erro ao carregar. Clique em "Gerar Fila" novamente.</td></tr>';
-        }, 15000);
+      const dailyInput = document.getElementById('reviewDailyQuestionsInput');
+      const selectedDailyQuestions = dailyInput ? Number(dailyInput.value) : NaN;
+      const requestArgs = silent ? { __skipOverlay: true } : {};
+      if (isFinite(selectedDailyQuestions) && selectedDailyQuestions > 0) {
+        requestArgs.dailyQuestions = Math.max(1, Math.round(selectedDailyQuestions));
       }
-
-      google.script.run
-        .withSuccessHandler(function(result) {
-          if (timeoutId) clearTimeout(timeoutId);
-          if (!silent) setLoading(false);
-
-          if (result && result.ok) {
-            const policyVersion = result.policyVersion || '';
-            const policyMode = policyVersion.indexOf('advanced') === 0 ? 'advanced' : 'classic';
-            const normalized = (result.data || []).map(normalizeQueueItem);
-
-            if (preservePlan) {
-              if (previousDone) {
-                normalized.forEach(item => {
-                  if (previousDone.has(item.alvo)) {
-                    const wasDone = previousDone.get(item.alvo);
-                    item.__done = wasDone;
-                    item.feito = wasDone ? 1 : '';
-                  }
-                });
-              }
-              reviewQueue = normalized;
-              const filteredPlan = new Map();
-              normalized.forEach(item => {
-                if (previousPlan && previousPlan.has(item.alvo)) {
-                  filteredPlan.set(item.alvo, previousPlan.get(item.alvo));
-                }
-              });
-              plannerAllocations = filteredPlan;
-              const aggregates = summarizePlannerAllocations(plannerAllocations);
-              plannerAreas = aggregates.areas;
-              const prevBudget = previousSummary && previousSummary.budget !== undefined
-                ? previousSummary.budget
-                : (Number(result.budgetMin) || 0);
-              const rawAlloc = aggregates.totalAlloc;
-              const rawDelta = aggregates.totalDelta;
-              const totalAlloc = Number.isFinite(rawAlloc) ? Math.round(rawAlloc) : 0;
-              const totalDelta = Number.isFinite(rawDelta) ? Math.round(rawDelta * 10) / 10 : 0;
-              const safeDelta = totalDelta < 0 ? 0 : totalDelta;
-              plannerSummary = {
-                budget: prevBudget,
-                allocated: totalAlloc,
-                delta: safeDelta,
-                mode: policyMode
-              };
-            } else {
-              reviewQueue = normalized;
-              resetPlannerState(false);
-              plannerSummary.mode = policyMode;
-              retrospectiveSnapshot = null;
-              updateRetrospectivaResumo(null);
-            }
-
-            renderFilaRevisoes(reviewQueue);
-            addSuggestionsFromQueue(reviewQueue);
-
-            const count = result.count || 0;
-            document.getElementById('kpiRevisoesHoje').textContent = count;
-
-            const eviInfoEl = document.getElementById('policyEvi');
-            if (eviInfoEl) {
-              const eviValues = (reviewQueue || [])
-                .map(item => (item.eviPerMin !== undefined && item.eviPerMin !== null ? Number(item.eviPerMin) : NaN))
-                .filter(val => !isNaN(val));
-              if (eviValues.length > 0) {
-                const avgEvi = eviValues.reduce((sum, val) => sum + val, 0) / eviValues.length;
-                eviInfoEl.textContent = `EVI médio: ${avgEvi.toFixed(3)}`;
-              } else {
-                eviInfoEl.textContent = 'EVI médio: —';
-              }
-            }
-
-            updatePlannerSummaryUI();
-
-            if (!silent) {
-              if (count === 0) {
-                toast('✓ Nenhuma revisão vencida hoje. Próximas revisões em breve!', 'success');
-              } else {
-                toast(`✓ ${count} revisão(ões) encontrada(s)`, 'success');
-              }
-            }
-          } else if (!silent) {
-            toast('Erro: ' + (result ? result.error : 'Sem resposta'), 'error');
-            document.getElementById('filaBody').innerHTML =
-              '<tr><td colspan="8" class="empty-state">Erro ao gerar fila.</td></tr>';
-          }
-        })
-        .withFailureHandler(function(error) {
-          if (timeoutId) clearTimeout(timeoutId);
+      run('apiMakeReviewToday', requestArgs, function(result) {
+        if (!result) {
           if (!silent) {
-            setLoading(false);
-            toast('Erro: ' + error.message, 'error');
-            document.getElementById('filaBody').innerHTML =
-              '<tr><td colspan="8" class="empty-state">Erro de conexão.</td></tr>';
-          } else {
-            console.warn('Erro ao gerar fila:', error);
+            toast('Erro: resposta vazia do servidor.', 'error');
           }
-        })
-        .apiMakeReviewToday();
-    }
+          return;
+        }
 
+        if (result.dailyQuestions !== undefined) {
+          const reviewDailyInput = document.getElementById('reviewDailyQuestionsInput');
+          if (reviewDailyInput && isFinite(Number(result.dailyQuestions))) {
+            reviewDailyInput.value = Math.max(1, Math.round(Number(result.dailyQuestions)));
+          }
+        }
+
+        const policyVersion = result.policyVersion || '';
+        const policyMode = policyVersion.indexOf('advanced') === 0 ? 'advanced' : 'classic';
+        const dateISO = result.date || new Date().toISOString().slice(0, 10);
+        currentReviewDate = dateISO;
+        reviewDoneState = loadReviewDoneState(dateISO);
+        const rawItems = Array.isArray(result.items) ? result.items : (Array.isArray(result.data) ? result.data : []);
+        const normalized = rawItems.map(normalizeQueueItem);
+
+        if (preservePlan) {
+          if (previousDone) {
+            normalized.forEach(item => {
+              if (previousDone.has(item.alvo)) {
+                const wasDone = previousDone.get(item.alvo);
+                item.__done = wasDone;
+                item.feito = wasDone ? 1 : '';
+                if (currentReviewDate) {
+                  setReviewDoneLocal(currentReviewDate, item.alvo, wasDone);
+                }
+              }
+            });
+          }
+          reviewQueue = normalized;
+          const filteredPlan = new Map();
+          normalized.forEach(item => {
+            if (previousPlan && previousPlan.has(item.alvo)) {
+              filteredPlan.set(item.alvo, previousPlan.get(item.alvo));
+            }
+          });
+          plannerAllocations = filteredPlan;
+          const aggregates = summarizePlannerAllocations(plannerAllocations);
+          plannerAreas = aggregates.areas;
+          const prevBudget = previousSummary && previousSummary.budget !== undefined
+            ? previousSummary.budget
+            : (Number(result.budgetMin) || 0);
+          const rawAlloc = aggregates.totalAlloc;
+          const rawDelta = aggregates.totalDelta;
+          const totalAlloc = Number.isFinite(rawAlloc) ? Math.round(rawAlloc) : 0;
+          const totalDelta = Number.isFinite(rawDelta) ? Math.round(rawDelta * 10) / 10 : 0;
+          const safeDelta = totalDelta < 0 ? 0 : totalDelta;
+          plannerSummary = {
+            budget: prevBudget,
+            allocated: totalAlloc,
+            delta: safeDelta,
+            mode: policyMode
+          };
+        } else {
+          reviewQueue = normalized;
+          resetPlannerState(false);
+          plannerSummary.mode = policyMode;
+          retrospectiveSnapshot = null;
+          updateRetrospectivaResumo(null);
+        }
+
+        renderFilaRevisoes(reviewQueue);
+        addSuggestionsFromQueue(reviewQueue);
+
+        const count = result.count || reviewQueue.length || 0;
+        const kpiEl = document.getElementById('kpiRevisoesHoje');
+        if (kpiEl) {
+          kpiEl.textContent = count;
+        }
+
+        const eviInfoEl = document.getElementById('policyEvi');
+        if (eviInfoEl) {
+          const eviValues = (reviewQueue || [])
+            .map(item => (item.eviPerMin !== undefined && item.eviPerMin !== null ? Number(item.eviPerMin) : NaN))
+            .filter(val => !isNaN(val));
+          if (eviValues.length > 0) {
+            const avgEvi = eviValues.reduce((sum, val) => sum + val, 0) / eviValues.length;
+            eviInfoEl.textContent = `EVI médio: ${avgEvi.toFixed(3)}`;
+          } else {
+            eviInfoEl.textContent = 'EVI médio: —';
+          }
+        }
+
+        updatePlannerSummaryUI();
+
+        if (!silent) {
+          if (count === 0) {
+            toast('✓ Nenhuma revisão vencida hoje. Próximas revisões em breve!', 'success');
+          } else {
+            toast(`✓ ${count} revisão(ões) encontrada(s)`, 'success');
+          }
+        }
+      }, function(error) {
+        if (silent) {
+          console.warn('Erro ao gerar fila:', error);
+          return;
+        }
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Erro: ' + message, 'error');
+        const body = document.getElementById('filaBody');
+        if (body) {
+          body.innerHTML = '<tr><td colspan="8" class="empty-state">Erro ao gerar lista.</td></tr>';
+        }
+      });
+    }
     function calcularPlano() {
       const enabled = toBool((currentSettings || {}).useBanditPlanner);
       if (!enabled) {
@@ -5149,142 +6585,473 @@
         });
     }
 
+
     function normalizeQueueItem(item) {
       if (!item) return item;
-      const doneFlag = item.feito !== undefined && item.feito !== null && `${item.feito}`.trim() !== '' && `${item.feito}` !== '0';
+      if (item.hidden !== undefined) {
+        item.hidden = toBool(item.hidden);
+      }
+      const feitoPlanilha = item.feito !== undefined && item.feito !== null && `${item.feito}`.toString().trim() !== '' && `${item.feito}` !== '0';
+      const feitoLocal = isReviewMarkedLocal(item.alvo);
+      const doneFlag = feitoPlanilha || feitoLocal;
       item.__done = doneFlag;
+      if (doneFlag && !feitoLocal && currentReviewDate) {
+        setReviewDoneLocal(currentReviewDate, item.alvo, true);
+      }
+      if ((item.S === undefined || item.S === null) && item.estabilidade !== undefined) {
+        const est = Number(item.estabilidade);
+        if (isFinite(est)) {
+          item.S = est;
+        }
+      }
+      if ((item.Rhoje === undefined || item.Rhoje === null) && item.baseRecall !== undefined && item.baseRecall !== null) {
+        const base = Number(item.baseRecall);
+        if (isFinite(base)) {
+          item.Rhoje = clampValue(1 - base, 0, 1);
+        }
+      }
+      if (item.questoesSugeridas !== undefined && item.questoesSugeridas !== null) {
+        const q = Number(item.questoesSugeridas);
+        item.questoesSugeridas = isFinite(q) ? Math.max(0, Math.round(q)) : 0;
+      }
+      if (item.tempoEstMin === undefined || item.tempoEstMin === null) {
+        if (item.tempoPrevMin !== undefined && item.tempoPrevMin !== null) {
+          const tempoPrev = Number(item.tempoPrevMin);
+          if (isFinite(tempoPrev)) {
+            item.tempoEstMin = tempoPrev;
+          }
+        } else if (item.costMinutes !== undefined && item.costMinutes !== null) {
+          const cost = Number(item.costMinutes);
+          if (isFinite(cost)) {
+            item.tempoEstMin = cost;
+          }
+        }
+      }
       return item;
+    }
+
+    function concluirAlvo(payload, options = {}) {
+      const request = Object.assign({}, payload || {});
+      if (options.skipOverlay) {
+        request.__skipOverlay = true;
+      }
+      run('apiApplyReviewDone', request, function(res) {
+        if (typeof options.onSuccess === 'function') {
+          try {
+            options.onSuccess(res);
+          } catch (handlerErr) {
+            console.error('Erro no sucesso de concluirAlvo:', handlerErr);
+          }
+        }
+      }, function(error) {
+        if (typeof options.onError === 'function') {
+          try {
+            options.onError(error);
+            return;
+          } catch (handlerErr) {
+            console.error('Erro no error handler de concluirAlvo:', handlerErr);
+          }
+        }
+        const message = typeof error === 'string'
+          ? error
+          : (error && error.message ? error.message : 'erro desconhecido');
+        toast('Erro ao aplicar revisão: ' + message, 'error');
+      });
     }
 
     function renderFilaRevisoes(queue) {
       const tbody = document.getElementById('filaBody');
+      if (!tbody) return;
       tbody.innerHTML = '';
 
       if (!Array.isArray(queue) || queue.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Nenhuma revisão pendente hoje</td></tr>';
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 8;
+        cell.innerHTML = `
+          <div class="empty-state">
+            <p>Nada para revisar hoje 🎉</p>
+            <button class="btn btn-secondary btn-small" onclick="verCalendarioRevisoes()">Ver calendário</button>
+          </div>
+        `;
+        row.appendChild(cell);
+        tbody.appendChild(row);
+        updateReviewSummary([]);
+        renderReviewDistribution([]);
         return;
       }
-
-      const mode = plannerSummary.mode || (toBool((currentSettings || {}).useAdvancedPriority) ? 'advanced' : 'classic');
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
 
       queue.forEach(item => {
         if (!item) return;
         const row = document.createElement('tr');
         row.classList.add('queue-row');
-
-        const prioridadeVal = Number(item.prioridade) || 0;
-        const prioridadeText = prioridadeVal.toFixed(3);
-        const estabilidadeVal = Number(item.estabilidade) || 0;
-        const estabilidadeText = estabilidadeVal.toFixed(1);
-
-        let atrasoDias = item.atrasoDias !== undefined ? Number(item.atrasoDias) : NaN;
-        if ((!isFinite(atrasoDias) || atrasoDias === null) && plannerAllocations.has(item.alvo)) {
-          const planInfo = plannerAllocations.get(item.alvo);
-          if (planInfo && planInfo.t !== undefined) {
-            atrasoDias = Number(planInfo.t);
-          }
-        }
-        if (!isFinite(atrasoDias)) {
-          const proxima = parseAppDate(item.proximaRevisao);
-          if (proxima instanceof Date && !isNaN(proxima)) {
-            atrasoDias = Math.max(0, Math.round((today - proxima) / (1000 * 60 * 60 * 24)));
-          }
-        }
-        const atrasoText = isFinite(atrasoDias) ? atrasoDias.toFixed(0) : '—';
-
-        const planInfo = plannerAllocations.get(item.alvo) || null;
-        let metricValue = null;
-        if (mode === 'advanced') {
-          if (planInfo && planInfo.eviPerMin !== undefined && planInfo.eviPerMin !== null) {
-            metricValue = Number(planInfo.eviPerMin);
-          } else if (planInfo && planInfo.eviLCBPerMin !== undefined) {
-            metricValue = Number(planInfo.eviLCBPerMin);
-          } else if (item.eviPerMinMean !== undefined && item.eviPerMinMean !== null) {
-            metricValue = Number(item.eviPerMinMean);
-          } else if (item.eviPerMin !== undefined && item.eviPerMin !== null) {
-            metricValue = Number(item.eviPerMin);
-          }
-        } else {
-          if (planInfo && planInfo.priPerMin !== undefined && planInfo.priPerMin !== null) {
-            metricValue = Number(planInfo.priPerMin);
-          } else {
-            const tempoBase = planInfo && planInfo.tempoMedio !== undefined
-              ? Number(planInfo.tempoMedio)
-              : (item.tempoPrevMin !== undefined ? Number(item.tempoPrevMin) : 1);
-            const tempoNorm = Math.max(1, isFinite(tempoBase) ? tempoBase : 1);
-            metricValue = prioridadeVal / tempoNorm;
-          }
-        }
-        const metricText = metricValue !== null && isFinite(metricValue)
-          ? `${mode === 'advanced' ? 'EVI/min' : 'Pri/min'} ${metricValue.toFixed(3)}`
-          : mode === 'advanced' ? 'EVI/min —' : 'Pri/min —';
-
-        const allocVal = planInfo && planInfo.allocMin !== undefined ? Number(planInfo.allocMin) : 0;
-        const allocText = allocVal > 0 ? `${allocVal.toFixed(0)} min` : '—';
-
-        const deltaVal = planInfo && planInfo.deltaRpp !== undefined ? Number(planInfo.deltaRpp) : 0;
-        const deltaText = deltaVal > 0 ? `+${deltaVal.toFixed(1)}%` : '—';
-
-        const done = !!item.__done;
-        if (done) {
+        if (item.__done) {
           row.classList.add('done');
         }
-
-        row.innerHTML = `
-          <td>${item.alvo}</td>
-          <td>${prioridadeText}</td>
-          <td>${estabilidadeText}</td>
-          <td>${atrasoText}</td>
-          <td>${metricText}</td>
-          <td>${allocText}</td>
-          <td>${deltaText}</td>
-          <td class="status-cell">
-            <label class="status-toggle">
-              <input type="checkbox" ${done ? 'checked' : ''}>
-              <span>Feito</span>
-            </label>
-          </td>
-        `;
-
-        const checkbox = row.querySelector('input[type="checkbox"]');
-        if (checkbox) {
-          checkbox.addEventListener('click', function(event) {
-            event.stopPropagation();
-          });
-          checkbox.addEventListener('change', function(event) {
-            event.stopPropagation();
-            toggleItemFeito(item, row, checkbox.checked);
-          });
+        const isHidden = !!item.hidden;
+        if (isHidden) {
+          row.classList.add('is-hidden');
         }
 
-        row.addEventListener('click', function() {
-          const alvoField = document.getElementById('revisaoAlvo');
-          if (alvoField) {
-            alvoField.value = item.alvo;
-          }
-        });
+        const alvoCell = document.createElement('td');
+        alvoCell.className = 'col-alvo';
+        const alvoParts = (item.area || item.subarea)
+          ? { area: item.area, subarea: item.subarea }
+          : parseAlvoParts(item.alvo || '');
+        const alvoLabel = alvoParts.area
+          ? `${alvoParts.area}${alvoParts.subarea ? '::' + alvoParts.subarea : ''}`
+          : (item.alvo || '—');
+        const hiddenBadge = isHidden ? '<span class="queue-badge">Congelado</span>' : '';
+        const sugestaoQtd = item.questoesSugeridas !== undefined && item.questoesSugeridas !== null
+          ? Number(item.questoesSugeridas)
+          : NaN;
+        const sugestaoLabel = isFinite(sugestaoQtd)
+          ? `<div class="helper-text">Sugestão: ${Math.max(0, Math.round(sugestaoQtd))} questão(ões)</div>`
+          : '<div class="helper-text">Sugestão: —</div>';
+        alvoCell.innerHTML = `
+          <div class="pri-main">${alvoLabel}${hiddenBadge}</div>
+          ${item.proximaRevisao ? `<div class="helper-text">Próx: ${item.proximaRevisao}</div>` : ''}
+          ${sugestaoLabel}
+        `;
+
+        const priCell = document.createElement('td');
+        priCell.className = 'col-pri';
+        const priVal = Number(item.prioridade);
+        priCell.textContent = isFinite(priVal) ? priVal.toFixed(3) : '—';
+
+        const sCell = document.createElement('td');
+        sCell.className = 'col-s';
+        const sVal = item.S !== undefined && item.S !== null ? Number(item.S) : Number(item.estabilidade);
+        sCell.textContent = isFinite(sVal) ? sVal.toFixed(1) : '—';
+
+        const rCell = document.createElement('td');
+        rCell.className = 'col-r';
+        const rVal = item.Rhoje !== undefined && item.Rhoje !== null ? Number(item.Rhoje) : NaN;
+        rCell.textContent = isFinite(rVal) ? rVal.toFixed(2) : '—';
+
+        const overdueCell = document.createElement('td');
+        overdueCell.className = 'col-overdue';
+        let overdueVal = item.overdue !== undefined && item.overdue !== null ? Number(item.overdue) : NaN;
+        if (!isFinite(overdueVal) && item.atrasoDias !== undefined && item.atrasoDias !== null) {
+          overdueVal = Number(item.atrasoDias);
+        }
+        overdueCell.textContent = isFinite(overdueVal) ? overdueVal.toFixed(2) : '—';
+
+        const tempoCell = document.createElement('td');
+        tempoCell.className = 'col-tempo';
+        const tempoVal = item.tempoEstMin !== undefined && item.tempoEstMin !== null
+          ? Number(item.tempoEstMin)
+          : (item.tempoPrevMin !== undefined ? Number(item.tempoPrevMin) : NaN);
+        tempoCell.textContent = isFinite(tempoVal) ? `${Math.max(1, Math.round(tempoVal))} min` : '—';
+
+        const questoesCell = document.createElement('td');
+        questoesCell.className = 'col-questoes';
+        const qVal = item.questoesSugeridas !== undefined && item.questoesSugeridas !== null
+          ? Number(item.questoesSugeridas)
+          : NaN;
+        questoesCell.textContent = isFinite(qVal) ? `${Math.max(0, Math.round(qVal))} q` : '—';
+
+        const actionsCell = document.createElement('td');
+        actionsCell.className = 'col-acoes';
+        const actionsWrapper = document.createElement('div');
+        actionsWrapper.className = 'queue-actions';
+
+        if (item.__done) {
+          const doneLabel = document.createElement('span');
+          doneLabel.className = 'done-label';
+          doneLabel.textContent = '✔ Concluído';
+          const undoBtn = document.createElement('button');
+          undoBtn.className = 'btn btn-secondary btn-small';
+          undoBtn.textContent = 'Desfazer';
+          undoBtn.addEventListener('click', function() {
+            desfazerRevisao(item);
+          });
+          actionsWrapper.appendChild(doneLabel);
+          actionsWrapper.appendChild(undoBtn);
+        } else if (isHidden) {
+          const hiddenLabel = document.createElement('span');
+          hiddenLabel.className = 'helper-text';
+          hiddenLabel.textContent = 'Alvo congelado';
+          actionsWrapper.appendChild(hiddenLabel);
+        } else {
+          const startBtn = document.createElement('button');
+          startBtn.className = 'btn btn-secondary btn-small';
+          startBtn.textContent = 'Iniciar';
+          startBtn.addEventListener('click', function() {
+            iniciarRevisao(item);
+          });
+          const completeBtn = document.createElement('button');
+          completeBtn.className = 'btn btn-primary btn-small';
+          completeBtn.textContent = 'Concluir';
+          completeBtn.addEventListener('click', function() {
+            abrirReviewModal(item);
+          });
+          actionsWrapper.appendChild(startBtn);
+          actionsWrapper.appendChild(completeBtn);
+        }
+
+        actionsCell.appendChild(actionsWrapper);
+
+        row.appendChild(alvoCell);
+        row.appendChild(priCell);
+        row.appendChild(sCell);
+        row.appendChild(rCell);
+        row.appendChild(overdueCell);
+        row.appendChild(tempoCell);
+        row.appendChild(questoesCell);
+        row.appendChild(actionsCell);
 
         tbody.appendChild(row);
       });
+
+      updateReviewSummary(queue);
+      renderReviewDistribution(queue);
     }
 
-    function toggleItemFeito(item, row, checked) {
-      if (!item || !row) return;
-      item.__done = checked;
-      item.feito = checked ? 1 : '';
-      row.classList.toggle('done', checked);
-      updatePlannerSummaryUI();
-      if (checked) {
-        toast(`✓ ${item.alvo} marcado como estudado!`, 'success');
-      } else {
-        toast(`Revisão de ${item.alvo} desmarcada.`, 'info');
+    function iniciarRevisao(item) {
+      if (!item) return;
+      const alvoLabel = item.alvo || 'alvo';
+      toast(`Inicie a revisão de ${alvoLabel}!`, 'info');
+    }
+
+    function abrirReviewModal(item) {
+      if (!reviewModalEl || !reviewModalOverlayEl) {
+        toast('Modal indisponível.', 'error');
+        return;
       }
+      reviewModalTarget = item;
+      const alvoLabelEl = document.getElementById('modalAlvoLabel');
+      if (alvoLabelEl) {
+        alvoLabelEl.textContent = item && item.alvo ? `Alvo: ${item.alvo}` : 'Alvo: —';
+      }
+      const totalInput = document.getElementById('modalTotal');
+      if (totalInput) totalInput.value = '';
+      const acertosInput = document.getElementById('modalAcertos');
+      if (acertosInput) acertosInput.value = '';
+      const tempoInput = document.getElementById('modalTempo');
+      if (tempoInput) {
+        if (item && item.tempoEstMin !== undefined && item.tempoEstMin !== null) {
+          tempoInput.value = Math.max(1, Math.round(Number(item.tempoEstMin) * 60));
+        } else {
+          tempoInput.value = '';
+        }
+      }
+      const difSelect = document.getElementById('modalDif');
+      if (difSelect) difSelect.value = '3';
+      const flagsInput = document.getElementById('modalFlags');
+      if (flagsInput) flagsInput.value = '';
+
+      reviewModalEl.classList.add('active');
+      reviewModalOverlayEl.classList.add('active');
     }
 
+    function fecharReviewModal() {
+      if (reviewModalEl) reviewModalEl.classList.remove('active');
+      if (reviewModalOverlayEl) reviewModalOverlayEl.classList.remove('active');
+      reviewModalTarget = null;
+    }
+
+    function submitReviewOutcome() {
+      if (!reviewModalTarget) {
+        toast('Selecione um item da fila antes de registrar.', 'warning');
+        return;
+      }
+      const alvo = reviewModalTarget.alvo;
+      const totalInput = document.getElementById('modalTotal');
+      const acertosInput = document.getElementById('modalAcertos');
+      const tempoInput = document.getElementById('modalTempo');
+      const difSelect = document.getElementById('modalDif');
+      const flagsInput = document.getElementById('modalFlags');
+
+      const total = parseInt(totalInput && totalInput.value ? totalInput.value : '0', 10);
+      const acertos = parseInt(acertosInput && acertosInput.value ? acertosInput.value : '0', 10);
+      const tempoSeg = parseInt(tempoInput && tempoInput.value ? tempoInput.value : '0', 10);
+      const difPercebida = parseInt(difSelect && difSelect.value ? difSelect.value : '3', 10);
+      const flags = flagsInput ? flagsInput.value : '';
+
+      if (!alvo) {
+        toast('Alvo inválido.', 'error');
+        return;
+      }
+      if (!isFinite(total) || total <= 0) {
+        toast('Informe o total de questões resolvidas.', 'warning');
+        return;
+      }
+      if (!isFinite(acertos) || acertos < 0 || acertos > total) {
+        toast('Quantidade de acertos inválida.', 'warning');
+        return;
+      }
+      if (!isFinite(tempoSeg) || tempoSeg < 0) {
+        toast('Informe o tempo gasto em segundos.', 'warning');
+        return;
+      }
+
+      let area = reviewModalTarget.area;
+      let subarea = reviewModalTarget.subarea;
+      if ((!area || !subarea) && reviewModalTarget.alvo) {
+        const parts = parseAlvoParts(reviewModalTarget.alvo);
+        if (!area) area = parts.area;
+        if (!subarea) subarea = parts.subarea;
+      }
+
+      const payload = {
+        alvo,
+        total,
+        acertos,
+        tempoSeg,
+        difPercebida,
+        flags,
+        area,
+        subarea
+      };
+
+      concluirAlvo(payload, {
+        onSuccess: function() {
+          toast('Revisão registrada!', 'success');
+          setReviewDoneLocal(currentReviewDate, alvo, true);
+          reviewQueue.forEach(item => {
+            if (item && item.alvo === alvo) {
+              item.__done = true;
+              item.feito = 1;
+            }
+          });
+          renderFilaRevisoes(reviewQueue);
+          updatePlannerSummaryUI();
+          fecharReviewModal();
+        },
+        onError: function(error) {
+          const message = typeof error === 'string'
+            ? error
+            : (error && error.message ? error.message : 'desconhecido');
+          toast('Erro ao registrar revisão: ' + message, 'error');
+        }
+      });
+    }
+
+    function desfazerRevisao(item) {
+      const alvo = typeof item === 'string' ? item : (item ? item.alvo : '');
+      if (!alvo) return;
+      concluirAlvo({ alvo, undo: true }, {
+        onSuccess: function() {
+          setReviewDoneLocal(currentReviewDate, alvo, false);
+          reviewQueue.forEach(entry => {
+            if (entry && entry.alvo === alvo) {
+              entry.__done = false;
+              entry.feito = '';
+            }
+          });
+          renderFilaRevisoes(reviewQueue);
+          updatePlannerSummaryUI();
+          toast(`Revisão de ${alvo} marcada como pendente.`, 'info');
+        },
+        onError: function(error) {
+          const message = typeof error === 'string'
+            ? error
+            : (error && error.message ? error.message : 'desconhecido');
+          toast('Erro ao desfazer: ' + message, 'error');
+        }
+      });
+    }
+
+    function verCalendarioRevisoes() {
+      setLoading(true);
+      google.script.run
+        .withSuccessHandler(function(result) {
+          setLoading(false);
+          if (result && result.ok) {
+            renderCalendar(result.data || []);
+            toast('Calendário atualizado!', 'success');
+          } else {
+            toast('Não foi possível carregar o calendário.', 'warning');
+          }
+        })
+        .withFailureHandler(function(error) {
+          setLoading(false);
+          toast('Erro ao carregar calendário: ' + error.message, 'error');
+        })
+        .apiGetReviewCalendar(28);
+    }
+
+    function updateReviewSummary(queue) {
+      const totalEl = document.getElementById('summaryPendenciasTotal');
+      const tempoEl = document.getElementById('summaryPendenciasTempo');
+      if (!totalEl || !tempoEl) return;
+      const pending = (Array.isArray(queue) ? queue : []).filter(item => item && !item.__done);
+      const count = pending.length;
+      let tempoTotal = 0;
+      let questoesTotais = 0;
+      pending.forEach(item => {
+        const tempo = item.tempoEstMin !== undefined && item.tempoEstMin !== null
+          ? Number(item.tempoEstMin)
+          : (item.tempoPrevMin !== undefined ? Number(item.tempoPrevMin) : NaN);
+        if (isFinite(tempo)) tempoTotal += tempo;
+        const q = item.questoesSugeridas !== undefined && item.questoesSugeridas !== null
+          ? Number(item.questoesSugeridas)
+          : NaN;
+        if (isFinite(q) && q > 0) questoesTotais += Math.round(q);
+      });
+      totalEl.textContent = count === 1 ? '1 item' : `${count} itens`;
+      tempoEl.textContent = `Tempo estimado: ${Math.round(tempoTotal)} min · Questões sugeridas: ${questoesTotais}`;
+    }
+
+    function renderReviewDistribution(queue) {
+      const chartEl = document.getElementById('chartDistribuicao');
+      const placeholder = document.getElementById('chartDistribuicaoPlaceholder');
+      if (!chartEl || !placeholder) return;
+      const pending = (Array.isArray(queue) ? queue : []).filter(item => item && !item.__done);
+      if (pending.length === 0) {
+        chartEl.style.display = 'none';
+        placeholder.style.display = 'flex';
+        placeholder.textContent = 'Sem revisões pendentes.';
+        return;
+      }
+
+      const areaMap = new Map();
+      pending.forEach(item => {
+        const area = (item.area || '').trim() || 'Sem área';
+        areaMap.set(area, (areaMap.get(area) || 0) + 1);
+      });
+
+      chartEl.style.display = 'none';
+      placeholder.style.display = 'flex';
+      placeholder.textContent = 'Carregando gráfico...';
+
+      ChartLoader.ensure()
+        .then(function() {
+          if (!(window.google && google.visualization && google.visualization.PieChart)) {
+            chartEl.style.display = 'none';
+            placeholder.style.display = 'flex';
+            placeholder.textContent = 'Gráfico indisponível.';
+            return;
+          }
+
+          const dataArray = [['Área', 'Itens']];
+          areaMap.forEach((count, area) => {
+            dataArray.push([area, count]);
+          });
+
+          const dataTable = google.visualization.arrayToDataTable(dataArray);
+          const options = {
+            backgroundColor: 'transparent',
+            legend: { textStyle: { color: '#cbd5e1' } },
+            pieHole: 0.4,
+            chartArea: { width: '90%', height: '80%' }
+          };
+          const chart = new google.visualization.PieChart(chartEl);
+          chart.draw(dataTable, options);
+          chartEl.style.display = 'block';
+          placeholder.style.display = 'none';
+        })
+        .catch(function(err) {
+          console.error('Falha ao renderizar distribuição de revisões:', err);
+          chartEl.style.display = 'none';
+          placeholder.style.display = 'flex';
+          placeholder.textContent = 'Gráfico indisponível.';
+        });
+    }
 
     function salvarRevisao() {
+
       const alvoField = document.getElementById('revisaoAlvo');
       const alvoInput = alvoField ? alvoField.value.trim() : '';
       let alvoFinal = alvoInput;
@@ -5396,6 +7163,10 @@
           preencherFormAjustes(settings);
           updatePlannerControls();
           setLoading(false);
+          if (visibilityTableBody) {
+            loadVisibilityData({ skipOverlay: true });
+          }
+          loadRestDays();
         })
         .withFailureHandler(function(error) {
           handleError(error);
@@ -5423,6 +7194,13 @@
       document.getElementById('setShrinkageC').value = settings.shrinkageC || 8.0;
       document.getElementById('setLambdaDiv').value = settings.lambdaDiversity || 0;
       document.getElementById('setPlanGainMix').value = settings.planGainMix || 0.5;
+      const reviewDailyRaw = Number(settings.reviewDailyQuestions);
+      const reviewDailyVal = isFinite(reviewDailyRaw) && reviewDailyRaw > 0 ? Math.round(reviewDailyRaw) : 50;
+      document.getElementById('setReviewDailyQuestions').value = reviewDailyVal;
+      const reviewDailyInput = document.getElementById('reviewDailyQuestionsInput');
+      if (reviewDailyInput) {
+        reviewDailyInput.value = reviewDailyVal;
+      }
       document.getElementById('setKappaPriDelta').value =
         settings.kappaPriToDelta !== undefined ? settings.kappaPriToDelta : 0.2;
       document.getElementById('setFatigueFactor').value = settings.fatigueFactor !== undefined ? settings.fatigueFactor : 0.3;
@@ -5441,6 +7219,70 @@
       document.getElementById('setUseWeibull').checked = toBool(settings.useWeibull);
       document.getElementById('setUseBanditPlanner').checked = toBool(settings.useBanditPlanner);
       document.getElementById('setUseABTesting').checked = toBool(settings.useABTesting);
+    }
+
+    function loadRestDays() {
+      run('apiListRestDays', {}, function(result) {
+        restDaysCache = Array.isArray(result.items) ? result.items : [];
+        renderRestDaysList();
+      }, function() {
+        restDaysCache = [];
+        renderRestDaysList();
+      });
+    }
+
+    function renderRestDaysList() {
+      const listEl = document.getElementById('restDaysList');
+      if (!listEl) return;
+      if (!Array.isArray(restDaysCache) || restDaysCache.length === 0) {
+        listEl.innerHTML = 'Nenhum dia de descanso cadastrado.';
+        return;
+      }
+
+      const rows = restDaysCache.map(item => {
+        const dateLabel = item && item.date ? formatShortDate(item.date) : '—';
+        const noteLabel = item && item.note ? ` · ${item.note}` : '';
+        const escapedDate = (item && item.date ? item.date : '').replace(/"/g, '&quot;');
+        return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin:6px 0;">
+          <span>${dateLabel}${noteLabel}</span>
+          <button class="btn btn-secondary btn-small" onclick="removerDiaDescanso('${escapedDate}')">Remover</button>
+        </div>`;
+      });
+      listEl.innerHTML = rows.join('');
+    }
+
+    function adicionarDiaDescanso() {
+      const dateInput = document.getElementById('restDayDate');
+      const noteInput = document.getElementById('restDayNote');
+      const date = dateInput ? dateInput.value : '';
+      const note = noteInput ? noteInput.value : '';
+      if (!date) {
+        toast('Selecione uma data para descanso.', 'warning');
+        return;
+      }
+
+      run('apiAddRestDay', { date, note }, function(result) {
+        toast(`Dia de descanso salvo. ${result.shifted || 0} revisão(ões) foram reagendadas.`, 'success');
+        if (noteInput) noteInput.value = '';
+        loadRestDays();
+        if (document.getElementById('dashboard').classList.contains('active')) {
+          carregarDadosDashboard();
+        }
+        if (document.getElementById('revisoes').classList.contains('active')) {
+          atualizarFilaHojeSilencioso(false);
+        }
+      });
+    }
+
+    function removerDiaDescanso(date) {
+      if (!date) return;
+      run('apiRemoveRestDay', { date }, function() {
+        toast('Dia de descanso removido.', 'success');
+        loadRestDays();
+        if (document.getElementById('dashboard').classList.contains('active')) {
+          carregarDadosDashboard();
+        }
+      });
     }
 
     function salvarAjustes() {
@@ -5463,6 +7305,7 @@
         shrinkageC: parseFloat(document.getElementById('setShrinkageC').value),
         lambdaDiversity: parseFloat(document.getElementById('setLambdaDiv').value),
         planGainMix: parseFloat(document.getElementById('setPlanGainMix').value),
+        reviewDailyQuestions: parseFloat(document.getElementById('setReviewDailyQuestions').value),
         kappaPriToDelta: parseFloat(document.getElementById('setKappaPriDelta').value),
         fatigueFactor: parseFloat(document.getElementById('setFatigueFactor').value),
         lambdaSurprise: parseFloat(document.getElementById('setLambdaSurprise').value),
@@ -5487,7 +7330,7 @@
         .withSuccessHandler(function(result) {
           if (result.ok) {
             toast('Ajustes salvos com sucesso!', 'success');
-            currentSettings = Object.assign({}, settings);
+            currentSettings = Object.assign({}, currentSettings || {}, settings);
             updatePlannerControls();
           } else {
             toast('Erro ao salvar: ' + result.error, 'error');
@@ -5551,5 +7394,42 @@
       toast('Erro: ' + (error.message || error.toString()), 'error');
     }
   </script>
+
+  <div id="reviewModalOverlay" class="modal-overlay"></div>
+  <div id="reviewModal" class="modal">
+    <h3>Registrar revisão</h3>
+    <p class="helper-text" id="modalAlvoLabel">Alvo: —</p>
+    <div class="form-group">
+      <label for="modalTotal">Total de questões</label>
+      <input type="number" id="modalTotal" min="1" placeholder="Ex: 20">
+    </div>
+    <div class="form-group">
+      <label for="modalAcertos">Acertos</label>
+      <input type="number" id="modalAcertos" min="0" placeholder="Ex: 16">
+    </div>
+    <div class="form-group">
+      <label for="modalTempo">Tempo gasto (segundos)</label>
+      <input type="number" id="modalTempo" min="0" step="1" placeholder="Ex: 900">
+    </div>
+    <div class="form-group">
+      <label for="modalDif">Dificuldade percebida</label>
+      <select id="modalDif">
+        <option value="1">1 - Muito fácil</option>
+        <option value="2">2 - Fácil</option>
+        <option value="3" selected>3 - Médio</option>
+        <option value="4">4 - Difícil</option>
+        <option value="5">5 - Muito difícil</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="modalFlags">Observações / flags (opcional)</label>
+      <input type="text" id="modalFlags" placeholder="Anotações rápidas">
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" onclick="fecharReviewModal()">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="submitReviewOutcome()">Salvar revisão</button>
+    </div>
+  </div>
+
 </body>
 </html>
