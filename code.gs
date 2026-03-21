@@ -17,20 +17,22 @@ const SHEET_NAMES = {
   SETTINGS: 'SETTINGS',
   EXAM_CONFIG: 'EXAM_CONFIG',
   POLICY_LOG: 'POLICY_LOG',
-  EFFECTS: 'EFFECTS'
+  EFFECTS: 'EFFECTS',
+  REST_DAYS: 'REST_DAYS'
 };
 
 const HEADERS = {
   LOG: ['data', 'area', 'subarea', 'total', 'acertos', 'tempoMedioSeg', 'difPercebida', 'flags', 'obs', 'uid'],
   STATS: ['area', 'subarea', 'total_blocos', 'questoes', 'acertos', 'acerto_vida', 'acerto_28d', 'acerto_7d', 'tempo_medio', 'flags_28d', 'dif_media', 'ultimaData'],
-  SPACED: ['alvo', 'ultimaRevisao', 'estabilidade', 'dificuldade_media', 'proximaRevisao', 'lapses', 'prioridade'],
-  REVER_HOJE: ['alvo', 'prioridade', 'proximaRevisao', 'estabilidade', 'feito'],
-  MODEL: ['alvo', 'theta0', 'theta1', 'theta2', 'S_atual', 'ultima_atualizacao', 'sigma', 'n_eff', 'weibull_k'],
+  SPACED: ['alvo', 'ultimaRevisao', 'estabilidade', 'dificuldade_media', 'proximaRevisao', 'lapses', 'prioridade', 'hidden', 'hidden_since'],
+  REVER_HOJE: ['alvo', 'prioridade', 'proximaRevisao', 'estabilidade', 'feito', 'questoesSugeridas'],
+  MODEL: ['alvo', 'theta0', 'theta1', 'theta2', 'S_atual', 'ultima_atualizacao', 'sigma', 'n_eff', 'weibull_k', 'hidden', 'hidden_since'],
   REVISAO_LOG: ['data', 'alvo', 'tDias', 'metaUsada', 'p_prev', 'acertou', 'tempoSeg', 'difPercebida', 'flags', 'obs', 'total', 'acertos'],
-  SETTINGS: ['retentionTarget', 'wPeg', 'wTempo', 'wDif', 'alpha', 'overdueMode', 'lrEta', 'regLambda', 'halfLifeDecayDays', 'reviewOutcomeWeight', 'Smin', 'Smax', 'Imin', 'Imax', 'betaUncertainty', 'shrinkageC', 'lambdaDiversity', 'planGainMix', 'flashcardsPerMinBase', 'minD1ReadMin', 'banditEnabledForGuide', 'kappaPriToDelta', 'fatigueFactor', 'lambdaSurprise', 'coverageTarget7d', 'powerAlphaScale', 'powerBetaScale', 'powerDiversityScale', 'maintAlphaScale', 'maintBetaScale', 'maintDiversityScale', 'useAdvancedPriority', 'useGainLCB', 'useRLSKalman', 'useDiversityReg', 'useWeibull', 'useBanditPlanner', 'useABTesting'],
+  SETTINGS: ['retentionTarget', 'wPeg', 'wTempo', 'wDif', 'alpha', 'overdueMode', 'lrEta', 'regLambda', 'halfLifeDecayDays', 'reviewOutcomeWeight', 'Smin', 'Smax', 'Imin', 'Imax', 'betaUncertainty', 'shrinkageC', 'lambdaDiversity', 'planGainMix', 'flashcardsPerMinBase', 'reviewDailyQuestions', 'minD1ReadMin', 'banditEnabledForGuide', 'kappaPriToDelta', 'fatigueFactor', 'lambdaSurprise', 'coverageTarget7d', 'powerAlphaScale', 'powerBetaScale', 'powerDiversityScale', 'maintAlphaScale', 'maintBetaScale', 'maintDiversityScale', 'useAdvancedPriority', 'useGainLCB', 'useRLSKalman', 'useDiversityReg', 'useWeibull', 'useBanditPlanner', 'useABTesting'],
   EXAM_CONFIG: ['area', 'peso', 'dataProva'],
   POLICY_LOG: ['timestamp', 'alvo', 'area', 'subarea', 'pri', 'eviPerMin', 'overdue', 'diversity', 'custos', 'tempoPrev', 'decisao', 'policyVersion'],
-  EFFECTS: ['alvo', 'ATE_pct', 'lo', 'hi', 'n_pairs', 'updated']
+  EFFECTS: ['alvo', 'ATE_pct', 'lo', 'hi', 'n_pairs', 'updated'],
+  REST_DAYS: ['date', 'note']
 };
 
 const DEFAULT_SETTINGS = {
@@ -53,6 +55,7 @@ const DEFAULT_SETTINGS = {
   lambdaDiversity: 0.25,
   planGainMix: 0.5,
   flashcardsPerMinBase: 2.0,
+  reviewDailyQuestions: 50,
   minD1ReadMin: 15,
   banditEnabledForGuide: true,
   kappaPriToDelta: 0.2,
@@ -211,6 +214,36 @@ function clearSheetData(sheetName) {
     sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clear();
   }
   SpreadsheetApp.flush();
+}
+
+// Converte qualquer erro capturado em string segura para evitar que o catch dispare outro erro.
+function errorToString(err) {
+  try {
+    if (err === null || err === undefined) {
+      return 'Erro desconhecido.';
+    }
+    if (typeof err === 'string') {
+      return err;
+    }
+    if (err.stack) {
+      return String(err.stack);
+    }
+    if (err.message) {
+      return String(err.message);
+    }
+    return JSON.stringify(err);
+  } catch (stringifyErr) {
+    return 'Erro desconhecido.';
+  }
+}
+
+// Normaliza valores numéricos enviados à UI evitando NaN/Infinity.
+function toFiniteOrNull(value, fallback = null) {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const num = Number(value);
+  return isFinite(num) ? num : fallback;
 }
 
 function clearWeibullCache(area) {
@@ -408,13 +441,23 @@ function formatDateDDMMYYYY(date) {
   return `${day}/${month}/${year}`;
 }
 
+function formatDateISO(date) {
+  const parsed = parseSheetDate(date) || (date instanceof Date ? new Date(date.getTime()) : null);
+  if (!parsed || isNaN(parsed)) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // ============================================================================
 // API: INICIALIZAÇÃO
 // ============================================================================
 
 function apiInit() {
+  let lock = null;
   try {
-    const lock = LockService.getScriptLock();
+    lock = LockService.getScriptLock();
     lock.tryLock(10000);
     
     // Criar todas as abas com headers
@@ -432,10 +475,17 @@ function apiInit() {
       SpreadsheetApp.flush();
     }
     
-    lock.releaseLock();
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
+  } finally {
+    if (lock) {
+      try {
+        lock.releaseLock();
+      } catch (err) {
+        // ignore release errors
+      }
+    }
   }
 }
 
@@ -474,8 +524,9 @@ function apiGetSettings() {
 }
 
 function apiSaveSettings(obj) {
+  let lock = null;
   try {
-    const lock = LockService.getScriptLock();
+    lock = LockService.getScriptLock();
     lock.tryLock(10000);
     
     const sheet = getOrCreateSheet(SHEET_NAMES.SETTINGS, HEADERS.SETTINGS);
@@ -496,6 +547,7 @@ function apiSaveSettings(obj) {
     if (!isFinite(obj.lambdaDiversity)) obj.lambdaDiversity = DEFAULT_SETTINGS.lambdaDiversity;
     obj.planGainMix = clamp(parseFloat(obj.planGainMix), 0, 1);
     if (!isFinite(obj.planGainMix)) obj.planGainMix = DEFAULT_SETTINGS.planGainMix;
+    obj.reviewDailyQuestions = Math.max(1, Math.round(parseFloat(obj.reviewDailyQuestions) || DEFAULT_SETTINGS.reviewDailyQuestions));
     obj.kappaPriToDelta = parseFloat(obj.kappaPriToDelta);
     if (!isFinite(obj.kappaPriToDelta)) obj.kappaPriToDelta = DEFAULT_SETTINGS.kappaPriToDelta;
     obj.kappaPriToDelta = Math.max(0, obj.kappaPriToDelta);
@@ -536,11 +588,715 @@ function apiSaveSettings(obj) {
     }
     
     SpreadsheetApp.flush();
-    lock.releaseLock();
-    
+
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
+  } finally {
+    if (lock) {
+      try {
+        lock.releaseLock();
+      } catch (err) {
+        // ignore release errors
+      }
+    }
+  }
+}
+
+// ============================================================================
+// API: VISIBILIDADE DE ALVOS (CONGELAR/DESCONGELAR)
+// ============================================================================
+
+function apiListTargetsForVisibility(params) {
+  try {
+    getOrCreateSheet(SHEET_NAMES.SPACED, HEADERS.SPACED);
+    getOrCreateSheet(SHEET_NAMES.MODEL, HEADERS.MODEL);
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const statsData = readSheetData(SHEET_NAMES.STATS);
+
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const targetsMap = {};
+    const areaMap = {};
+
+    function ensureEntry(alvo) {
+      if (!alvo) return null;
+      const key = `${alvo}`.trim();
+      if (!key) return null;
+      if (!targetsMap[key]) {
+        const parts = parseAlvoParts(key);
+        const area = parts.area || '—';
+        const subarea = parts.subarea || '';
+        targetsMap[key] = {
+          alvo: key,
+          area,
+          subarea,
+          hidden: false,
+          hidden_since: ''
+        };
+        if (!areaMap[area]) {
+          areaMap[area] = new Set();
+        }
+        if (subarea) {
+          areaMap[area].add(subarea);
+        }
+      }
+      return targetsMap[key];
+    }
+
+    spacedData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const entry = ensureEntry(row.alvo);
+      if (!entry) return;
+      const prox = parseSheetDate(row.proximaRevisao);
+      entry.proximaRevisao = prox ? formatDateISO(prox) : '';
+      const info = resolveHiddenState(row, modelMap[row.alvo]);
+      if (info.hidden) {
+        entry.hidden = true;
+        entry.hidden_since = info.hiddenSince;
+      } else if (!entry.hidden_since && info.hiddenSince) {
+        entry.hidden_since = info.hiddenSince;
+      }
+    });
+
+    modelData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const entry = ensureEntry(row.alvo);
+      if (!entry) return;
+      const info = resolveHiddenState(null, row);
+      if (info.hidden) {
+        entry.hidden = true;
+        entry.hidden_since = info.hiddenSince;
+      } else if (!entry.hidden_since && info.hiddenSince) {
+        entry.hidden_since = info.hiddenSince;
+      }
+    });
+
+    statsData.forEach(row => {
+      if (!row || !row.area) return;
+      const alvo = `${row.area}::${row.subarea || ''}`;
+      const entry = ensureEntry(alvo);
+      if (entry && row.subarea) {
+        areaMap[entry.area].add(row.subarea);
+      }
+    });
+
+    const areas = Object.keys(areaMap)
+      .filter(area => area && area !== '—')
+      .sort();
+
+    const targets = Object.values(targetsMap).sort((a, b) => {
+      if (a.area === b.area) {
+        return a.subarea.localeCompare(b.subarea);
+      }
+      return a.area.localeCompare(b.area);
+    });
+
+    const map = {};
+    areas.forEach(area => {
+      map[area] = Array.from(areaMap[area] || []).sort();
+    });
+
+    return { ok: true, areas, targets, map };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiVerifyReviewCoverage() {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = formatDateISO(today);
+    const restSet = getRestDaySet();
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const reviewHojeData = readSheetData(SHEET_NAMES.REVER_HOJE);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) modelMap[row.alvo] = row;
+    });
+
+    let invalidTargets = 0;
+    const dueSet = new Set();
+    spacedData.forEach(row => {
+      if (!row || !row.alvo) return;
+      if (isTargetHidden(row, modelMap[row.alvo])) return;
+      const prox = parseSheetDate(row.proximaRevisao);
+      const est = toFiniteOrNull(row.estabilidade, null);
+      if (!prox || !isFinite(est) || est === null || est <= 0) {
+        invalidTargets += 1;
+        return;
+      }
+      const effective = prox.getTime() < today.getTime() ? today : prox;
+      const shifted = shiftDateForwardSkippingRest(effective, restSet);
+      if (shifted && formatDateISO(shifted) === todayISO) {
+        dueSet.add(`${row.alvo}`.trim());
+      }
+    });
+
+    const reviewSet = new Set();
+    (reviewHojeData || []).forEach(row => {
+      if (row && row.alvo) reviewSet.add(`${row.alvo}`.trim());
+    });
+
+    let missing = 0;
+    dueSet.forEach(alvo => {
+      if (!reviewSet.has(alvo)) missing += 1;
+    });
+
+    let action = 'queue_ok';
+    let recompute = null;
+    let queue = null;
+    if (invalidTargets > 0) {
+      recompute = apiRecompute();
+      action = recompute && recompute.ok ? 'recomputed_model' : 'recompute_failed';
+    }
+    queue = apiMakeReviewToday();
+    if (missing > 0 && action === 'queue_ok') {
+      action = 'rebuilt_queue';
+    }
+
+    return {
+      ok: !!(queue && queue.ok),
+      action,
+      missing,
+      invalidTargets,
+      dueToday: dueSet.size,
+      queueCount: queue && queue.count ? queue.count : 0,
+      recompute
+    };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiHideTargets(payload) {
+  try {
+    const targets = normalizeTargetList((payload && payload.targets) || []);
+    if (targets.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    const todayISO = getTodayISO();
+    const stateMap = {};
+    targets.forEach(alvo => {
+      stateMap[alvo] = { hidden: true, hiddenSince: todayISO };
+    });
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+
+    // Marca hidden=TRUE nas abas SPACED e MODEL.
+    const touchedSpaced = updateHiddenStateForSheet(SHEET_NAMES.SPACED, 'SPACED', stateMap, spacedData);
+    const touchedModel = updateHiddenStateForSheet(SHEET_NAMES.MODEL, 'MODEL', stateMap, modelData);
+
+    const updatedSet = new Set();
+    touchedSpaced.forEach(alvo => updatedSet.add(alvo));
+    touchedModel.forEach(alvo => updatedSet.add(alvo));
+
+    return { ok: true, updated: updatedSet.size, date: todayISO };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiUnhideTargets(payload) {
+  try {
+    const targets = normalizeTargetList((payload && payload.targets) || []);
+    if (targets.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    const settings = apiGetSettings();
+    const metaRaw = parseFloat(settings.retentionTarget);
+    const retentionTarget = isFinite(metaRaw) && metaRaw > 0 && metaRaw < 1
+      ? metaRaw
+      : DEFAULT_SETTINGS.retentionTarget;
+    const Smin = toFiniteOrNull(settings.Smin, DEFAULT_SETTINGS.Smin) || DEFAULT_SETTINGS.Smin;
+    const Smax = toFiniteOrNull(settings.Smax, DEFAULT_SETTINGS.Smax) || DEFAULT_SETTINGS.Smax;
+    const Imin = toFiniteOrNull(settings.Imin, DEFAULT_SETTINGS.Imin) || DEFAULT_SETTINGS.Imin;
+    const Imax = toFiniteOrNull(settings.Imax, DEFAULT_SETTINGS.Imax) || DEFAULT_SETTINGS.Imax;
+    const useWeibull = asBoolean(settings.useWeibull);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = formatDateISO(today);
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const clearMap = {};
+    targets.forEach(alvo => {
+      clearMap[alvo] = { hidden: false, hiddenSince: '' };
+    });
+
+    // Marca hidden=FALSE nas abas SPACED e MODEL.
+    const touchedSpaced = updateHiddenStateForSheet(SHEET_NAMES.SPACED, 'SPACED', clearMap, spacedData);
+    const touchedModel = updateHiddenStateForSheet(SHEET_NAMES.MODEL, 'MODEL', clearMap, modelData);
+
+    // Ao descongelar, recalculamos a próxima revisão a partir de hoje.
+    const spacedSheet = getOrCreateSheet(SHEET_NAMES.SPACED, HEADERS.SPACED);
+    const proxIdx = HEADERS.SPACED.indexOf('proximaRevisao');
+    const estIdx = HEADERS.SPACED.indexOf('estabilidade');
+    if (proxIdx >= 0 && spacedData.length > 0) {
+      spacedData.forEach((row, idx) => {
+        if (!row || !row.alvo) return;
+        const alvo = `${row.alvo}`.trim();
+        if (!alvo || !clearMap[alvo]) return;
+        const parts = parseAlvoParts(alvo);
+        const modelRow = modelMap[alvo];
+        let S = toFiniteOrNull(row.estabilidade, null);
+        if (!isFinite(S) || S === null || S <= 0) {
+          const modelS = modelRow ? toFiniteOrNull(modelRow.S_atual, null) : null;
+          S = isFinite(modelS) && modelS > 0 ? modelS : Smin;
+        }
+        S = clamp(S, Smin, Smax);
+        const shape = useWeibull ? getWeibullShape(parts.area, settings) : 1;
+        let interval = calcOptimalInterval(S, retentionTarget, shape);
+        interval = applyCapI(interval, Imin, Imax);
+        const dias = Math.max(1, Math.ceil(interval));
+        const nextDate = new Date(today);
+        nextDate.setDate(today.getDate() + dias);
+        spacedSheet.getRange(idx + 2, proxIdx + 1).setValue(nextDate);
+        if (estIdx >= 0) {
+          spacedSheet.getRange(idx + 2, estIdx + 1).setValue(S);
+        }
+        row.hidden = false;
+        row.hidden_since = '';
+      });
+    }
+
+    const updatedSet = new Set();
+    touchedSpaced.forEach(alvo => updatedSet.add(alvo));
+    touchedModel.forEach(alvo => updatedSet.add(alvo));
+
+    return { ok: true, updated: updatedSet.size, date: todayISO };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+// ============================================================================
+// API: VISIBILIDADE DE ALVOS (CONGELAR/DESCONGELAR)
+// ============================================================================
+
+function apiListTargetsForVisibility(params) {
+  try {
+    getOrCreateSheet(SHEET_NAMES.SPACED, HEADERS.SPACED);
+    getOrCreateSheet(SHEET_NAMES.MODEL, HEADERS.MODEL);
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const statsData = readSheetData(SHEET_NAMES.STATS);
+
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const targetsMap = {};
+    const areaMap = {};
+
+    function ensureEntry(alvo) {
+      if (!alvo) return null;
+      const key = `${alvo}`.trim();
+      if (!key) return null;
+      if (!targetsMap[key]) {
+        const parts = parseAlvoParts(key);
+        const area = parts.area || '—';
+        const subarea = parts.subarea || '';
+        targetsMap[key] = {
+          alvo: key,
+          area,
+          subarea,
+          hidden: false,
+          hidden_since: ''
+        };
+        if (!areaMap[area]) {
+          areaMap[area] = new Set();
+        }
+        if (subarea) {
+          areaMap[area].add(subarea);
+        }
+      }
+      return targetsMap[key];
+    }
+
+    spacedData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const entry = ensureEntry(row.alvo);
+      if (!entry) return;
+      const prox = parseSheetDate(row.proximaRevisao);
+      entry.proximaRevisao = prox ? formatDateISO(prox) : '';
+      const info = resolveHiddenState(row, modelMap[row.alvo]);
+      if (info.hidden) {
+        entry.hidden = true;
+        entry.hidden_since = info.hiddenSince;
+      } else if (!entry.hidden_since && info.hiddenSince) {
+        entry.hidden_since = info.hiddenSince;
+      }
+    });
+
+    modelData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const entry = ensureEntry(row.alvo);
+      if (!entry) return;
+      const info = resolveHiddenState(null, row);
+      if (info.hidden) {
+        entry.hidden = true;
+        entry.hidden_since = info.hiddenSince;
+      } else if (!entry.hidden_since && info.hiddenSince) {
+        entry.hidden_since = info.hiddenSince;
+      }
+    });
+
+    statsData.forEach(row => {
+      if (!row || !row.area) return;
+      const alvo = `${row.area}::${row.subarea || ''}`;
+      const entry = ensureEntry(alvo);
+      if (entry && row.subarea) {
+        areaMap[entry.area].add(row.subarea);
+      }
+    });
+
+    const areas = Object.keys(areaMap)
+      .filter(area => area && area !== '—')
+      .sort();
+
+    const targets = Object.values(targetsMap).sort((a, b) => {
+      if (a.area === b.area) {
+        return a.subarea.localeCompare(b.subarea);
+      }
+      return a.area.localeCompare(b.area);
+    });
+
+    const map = {};
+    areas.forEach(area => {
+      map[area] = Array.from(areaMap[area] || []).sort();
+    });
+
+    return { ok: true, areas, targets, map };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiHideTargets(payload) {
+  try {
+    const targets = normalizeTargetList((payload && payload.targets) || []);
+    if (targets.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    const todayISO = getTodayISO();
+    const stateMap = {};
+    targets.forEach(alvo => {
+      stateMap[alvo] = { hidden: true, hiddenSince: todayISO };
+    });
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+
+    // Marca hidden=TRUE nas abas SPACED e MODEL.
+    const touchedSpaced = updateHiddenStateForSheet(SHEET_NAMES.SPACED, 'SPACED', stateMap, spacedData);
+    const touchedModel = updateHiddenStateForSheet(SHEET_NAMES.MODEL, 'MODEL', stateMap, modelData);
+
+    const updatedSet = new Set();
+    touchedSpaced.forEach(alvo => updatedSet.add(alvo));
+    touchedModel.forEach(alvo => updatedSet.add(alvo));
+
+    return { ok: true, updated: updatedSet.size };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiUnhideTargets(payload) {
+  try {
+    const targets = normalizeTargetList((payload && payload.targets) || []);
+    if (targets.length === 0) {
+      return { ok: true, updated: 0 };
+    }
+
+    const settings = apiGetSettings();
+    const metaRaw = parseFloat(settings.retentionTarget);
+    const retentionTarget = isFinite(metaRaw) && metaRaw > 0 && metaRaw < 1
+      ? metaRaw
+      : DEFAULT_SETTINGS.retentionTarget;
+    const Smin = toFiniteOrNull(settings.Smin, DEFAULT_SETTINGS.Smin) || DEFAULT_SETTINGS.Smin;
+    const Smax = toFiniteOrNull(settings.Smax, DEFAULT_SETTINGS.Smax) || DEFAULT_SETTINGS.Smax;
+    const Imin = toFiniteOrNull(settings.Imin, DEFAULT_SETTINGS.Imin) || DEFAULT_SETTINGS.Imin;
+    const Imax = toFiniteOrNull(settings.Imax, DEFAULT_SETTINGS.Imax) || DEFAULT_SETTINGS.Imax;
+    const useWeibull = asBoolean(settings.useWeibull);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = formatDateISO(today);
+
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const clearMap = {};
+    targets.forEach(alvo => {
+      clearMap[alvo] = { hidden: false, hiddenSince: '' };
+    });
+
+    // Marca hidden=FALSE nas abas SPACED e MODEL.
+    const touchedSpaced = updateHiddenStateForSheet(SHEET_NAMES.SPACED, 'SPACED', clearMap, spacedData);
+    const touchedModel = updateHiddenStateForSheet(SHEET_NAMES.MODEL, 'MODEL', clearMap, modelData);
+
+    // Ao descongelar, recalculamos a próxima revisão a partir de hoje.
+    const spacedSheet = getOrCreateSheet(SHEET_NAMES.SPACED, HEADERS.SPACED);
+    const proxIdx = HEADERS.SPACED.indexOf('proximaRevisao');
+    const estIdx = HEADERS.SPACED.indexOf('estabilidade');
+    if (proxIdx >= 0 && spacedData.length > 0) {
+      spacedData.forEach((row, idx) => {
+        if (!row || !row.alvo) return;
+        const alvo = `${row.alvo}`.trim();
+        if (!alvo || !clearMap[alvo]) return;
+        const parts = parseAlvoParts(alvo);
+        const modelRow = modelMap[alvo];
+        let S = toFiniteOrNull(row.estabilidade, null);
+        if (!isFinite(S) || S === null || S <= 0) {
+          const modelS = modelRow ? toFiniteOrNull(modelRow.S_atual, null) : null;
+          S = isFinite(modelS) && modelS > 0 ? modelS : Smin;
+        }
+        S = clamp(S, Smin, Smax);
+        const shape = useWeibull ? getWeibullShape(parts.area, settings) : 1;
+        let interval = calcOptimalInterval(S, retentionTarget, shape);
+        interval = applyCapI(interval, Imin, Imax);
+        const dias = Math.max(1, Math.ceil(interval));
+        const nextDate = new Date(today);
+        nextDate.setDate(today.getDate() + dias);
+        spacedSheet.getRange(idx + 2, proxIdx + 1).setValue(nextDate);
+        if (estIdx >= 0) {
+          spacedSheet.getRange(idx + 2, estIdx + 1).setValue(S);
+        }
+        row.hidden = false;
+        row.hidden_since = '';
+      });
+    }
+
+    const updatedSet = new Set();
+    touchedSpaced.forEach(alvo => updatedSet.add(alvo));
+    touchedModel.forEach(alvo => updatedSet.add(alvo));
+
+    return { ok: true, updated: updatedSet.size, date: todayISO };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+
+
+function getRestDaySet() {
+  getOrCreateSheet(SHEET_NAMES.REST_DAYS, HEADERS.REST_DAYS);
+  const rows = readSheetData(SHEET_NAMES.REST_DAYS);
+  const set = new Set();
+  (rows || []).forEach(row => {
+    if (!row) return;
+    const parsed = parseSheetDate(row.date) || parseIsoDateToLocal(row.date);
+    if (!parsed) return;
+    parsed.setHours(0, 0, 0, 0);
+    set.add(formatDateISO(parsed));
+  });
+  return set;
+}
+
+function shiftDateForwardSkippingRest(baseDate, restSet) {
+  if (!(baseDate instanceof Date) || isNaN(baseDate)) return null;
+  const shifted = new Date(baseDate.getTime());
+  shifted.setHours(0, 0, 0, 0);
+  const safety = 370;
+  let i = 0;
+  while (i < safety && restSet.has(formatDateISO(shifted))) {
+    shifted.setDate(shifted.getDate() + 1);
+    i += 1;
+  }
+  return shifted;
+}
+
+function shiftDateFromAnchorSkippingRest(baseDate, restSet, anchorDate) {
+  if (!(baseDate instanceof Date) || isNaN(baseDate)) return null;
+  const original = new Date(baseDate.getTime());
+  original.setHours(0, 0, 0, 0);
+  const anchor = anchorDate instanceof Date && !isNaN(anchorDate)
+    ? new Date(anchorDate.getTime())
+    : null;
+  if (!anchor) {
+    return shiftDateForwardSkippingRest(original, restSet);
+  }
+  anchor.setHours(0, 0, 0, 0);
+  if (original.getTime() < anchor.getTime()) {
+    return shiftDateForwardSkippingRest(original, restSet);
+  }
+
+  const orderedRestDays = Array.from(restSet)
+    .map(value => parseIsoDateToLocal(value))
+    .filter(Boolean)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const candidate = new Date(original.getTime());
+  const safety = orderedRestDays.length + 370;
+  let guard = 0;
+  while (guard < safety) {
+    let blockedDays = 0;
+    for (let i = 0; i < orderedRestDays.length; i++) {
+      const restDay = new Date(orderedRestDays[i].getTime());
+      restDay.setHours(0, 0, 0, 0);
+      if (restDay.getTime() >= anchor.getTime() && restDay.getTime() <= candidate.getTime()) {
+        blockedDays += 1;
+      }
+    }
+    const target = new Date(original.getTime());
+    target.setDate(target.getDate() + blockedDays);
+    target.setHours(0, 0, 0, 0);
+    if (target.getTime() === candidate.getTime()) {
+      break;
+    }
+    candidate.setTime(target.getTime());
+    guard += 1;
+  }
+
+  return shiftDateForwardSkippingRest(candidate, restSet);
+}
+
+function applyRestDaysToSpaced(anchorDate) {
+  const restSet = getRestDaySet();
+  const spacedSheet = getOrCreateSheet(SHEET_NAMES.SPACED, HEADERS.SPACED);
+  const data = readSheetData(SHEET_NAMES.SPACED);
+  const proxIdx = HEADERS.SPACED.indexOf('proximaRevisao');
+  if (proxIdx < 0 || !data.length) {
+    return { updated: 0 };
+  }
+
+  let updated = 0;
+  data.forEach((row, idx) => {
+    if (!row || !row.proximaRevisao) return;
+    const prox = parseSheetDate(row.proximaRevisao);
+    if (!prox) return;
+    const shifted = shiftDateFromAnchorSkippingRest(prox, restSet, anchorDate);
+    if (!shifted) return;
+    if (formatDateISO(shifted) !== formatDateISO(prox)) {
+      spacedSheet.getRange(idx + 2, proxIdx + 1).setValue(shifted);
+      updated += 1;
+    }
+  });
+
+  if (updated > 0) {
+    spacedSheet.getRange(2, proxIdx + 1, data.length, 1).setNumberFormat('dd/mm/yyyy');
+  }
+
+  return { updated };
+}
+
+function apiListRestDays() {
+  try {
+    getOrCreateSheet(SHEET_NAMES.REST_DAYS, HEADERS.REST_DAYS);
+    const rows = readSheetData(SHEET_NAMES.REST_DAYS);
+    const items = (rows || [])
+      .map(row => {
+        const parsed = parseSheetDate(row.date) || parseIsoDateToLocal(row.date);
+        if (!parsed) return null;
+        parsed.setHours(0, 0, 0, 0);
+        return {
+          date: formatDateISO(parsed),
+          note: row.note || ''
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return { ok: true, items };
+  } catch (e) {
+    return { ok: false, error: errorToString(e), items: [] };
+  }
+}
+
+function apiAddRestDay(payload) {
+  try {
+    const dateRaw = payload && payload.date ? payload.date : '';
+    const note = payload && payload.note ? `${payload.note}` : '';
+    const parsed = parseSheetDate(dateRaw) || parseIsoDateToLocal(dateRaw);
+    if (!parsed) {
+      return { ok: false, error: 'Data inválida para descanso.' };
+    }
+    parsed.setHours(0, 0, 0, 0);
+    const iso = formatDateISO(parsed);
+
+    const sheet = getOrCreateSheet(SHEET_NAMES.REST_DAYS, HEADERS.REST_DAYS);
+    const data = readSheetData(SHEET_NAMES.REST_DAYS);
+    const idx = data.findIndex(row => {
+      const existing = parseSheetDate(row.date) || parseIsoDateToLocal(row.date);
+      if (!existing) return false;
+      existing.setHours(0, 0, 0, 0);
+      return formatDateISO(existing) === iso;
+    });
+
+    const rowData = [parsed, note];
+    if (idx >= 0) {
+      updateSheetRow(SHEET_NAMES.REST_DAYS, idx, rowData);
+    } else {
+      writeSheetRow(SHEET_NAMES.REST_DAYS, rowData);
+    }
+
+    const recalc = applyRestDaysToSpaced(parsed);
+    apiMakeReviewToday();
+    return { ok: true, date: iso, shifted: recalc.updated || 0 };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  }
+}
+
+function apiRemoveRestDay(payload) {
+  try {
+    const dateRaw = payload && payload.date ? payload.date : '';
+    const parsed = parseSheetDate(dateRaw) || parseIsoDateToLocal(dateRaw);
+    if (!parsed) {
+      return { ok: false, error: 'Data inválida para remover descanso.' };
+    }
+    parsed.setHours(0, 0, 0, 0);
+    const iso = formatDateISO(parsed);
+
+    const sheet = getOrCreateSheet(SHEET_NAMES.REST_DAYS, HEADERS.REST_DAYS);
+    const data = readSheetData(SHEET_NAMES.REST_DAYS);
+    let removed = 0;
+    for (let i = data.length - 1; i >= 0; i--) {
+      const existing = parseSheetDate(data[i].date) || parseIsoDateToLocal(data[i].date);
+      if (!existing) continue;
+      existing.setHours(0, 0, 0, 0);
+      if (formatDateISO(existing) === iso) {
+        sheet.deleteRow(i + 2);
+        removed += 1;
+      }
+    }
+
+    apiMakeReviewToday();
+    return { ok: true, date: iso, removed };
+  } catch (e) {
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -590,14 +1346,17 @@ function apiLogBlock(payload) {
     // Escrever diretamente com formatação de data
     writeSheetRow(SHEET_NAMES.LOG, rowData);
 
+    // Atualiza STATS imediatamente para evitar atraso após lançamento de bloco.
+    recomputeStatsForTarget(payload.area || '', payload.subarea || '', { today: dataObj });
+
     Logger.log('Bloco salvo com sucesso! UID: ' + uid);
     
     return { ok: true, uid: uid };
     
   } catch (e) {
-    Logger.log('ERRO em apiLogBlock: ' + e.toString());
+    Logger.log('ERRO em apiLogBlock: ' + errorToString(e));
     Logger.log('Stack: ' + e.stack);
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -625,16 +1384,127 @@ function testLogBlock() {
 // PROCESSAMENTO: ATUALIZAR STATS A PARTIR DO LOG
 // ============================================================================
 
+function recomputeStatsForTarget(area, subarea, options) {
+  const cleanArea = (area || '').toString().trim() || 'Sem área';
+  const cleanSubarea = (subarea || '').toString().trim() || 'Sem subárea';
+  const hoje = options && options.today instanceof Date ? new Date(options.today.getTime()) : new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const logData = readSheetData(SHEET_NAMES.LOG);
+  const rows = (logData || []).filter(row => {
+    if (!row) return false;
+    return (row.area || 'Sem área') === cleanArea && (row.subarea || 'Sem subárea') === cleanSubarea;
+  });
+
+  if (!rows.length) {
+    return null;
+  }
+
+  let total_blocos = 0;
+  let questoes = 0;
+  let acertos = 0;
+  let questoes_28d = 0;
+  let acertos_28d = 0;
+  let questoes_7d = 0;
+  let acertos_7d = 0;
+  let flags_28d = 0;
+  const tempos = [];
+  const dificuldades = [];
+  let ultimaData = null;
+
+  rows.forEach(row => {
+    total_blocos += 1;
+    const total = Math.max(0, parseInt(row.total, 10) || 0);
+    const acertosRow = Math.max(0, Math.min(parseInt(row.acertos, 10) || 0, total));
+    const tempo = parseFloat(row.tempoMedioSeg) || 0;
+    const dif = parseFloat(row.difPercebida);
+
+    questoes += total;
+    acertos += acertosRow;
+
+    let dataBloco = parseSheetDate(row.data);
+    if (!dataBloco) {
+      dataBloco = hoje;
+    }
+    dataBloco.setHours(0, 0, 0, 0);
+
+    const diasAtras = Math.floor((hoje.getTime() - dataBloco.getTime()) / (1000 * 60 * 60 * 24));
+    if (diasAtras <= 28) {
+      questoes_28d += total;
+      acertos_28d += acertosRow;
+      if (row.flags) flags_28d += 1;
+    }
+    if (diasAtras <= 7) {
+      questoes_7d += total;
+      acertos_7d += acertosRow;
+    }
+
+    if (tempo > 0) tempos.push(tempo);
+    dificuldades.push(isFinite(dif) ? dif : 3);
+
+    if (!ultimaData || dataBloco.getTime() > ultimaData.getTime()) {
+      ultimaData = new Date(dataBloco.getTime());
+    }
+  });
+
+  const acerto_vida = questoes > 0 ? acertos / questoes : 0;
+  const acerto_28d = questoes_28d > 0 ? acertos_28d / questoes_28d : acerto_vida;
+  const acerto_7d = questoes_7d > 0 ? acertos_7d / questoes_7d : acerto_28d;
+  const tempo_medio = tempos.length > 0 ? tempos.reduce((a, b) => a + b, 0) / tempos.length : 60;
+  const dif_media = dificuldades.length > 0 ? dificuldades.reduce((a, b) => a + b, 0) / dificuldades.length : 3;
+
+  const statsRowObj = {
+    area: cleanArea,
+    subarea: cleanSubarea,
+    total_blocos,
+    questoes,
+    acertos,
+    acerto_vida,
+    acerto_28d,
+    acerto_7d,
+    tempo_medio,
+    flags_28d,
+    dif_media,
+    ultimaData: ultimaData || hoje
+  };
+
+  const statsSheet = getOrCreateSheet(SHEET_NAMES.STATS, HEADERS.STATS);
+  const statsData = readSheetData(SHEET_NAMES.STATS);
+  const idx = statsData.findIndex(row => (row.area || 'Sem área') === cleanArea && (row.subarea || 'Sem subárea') === cleanSubarea);
+  const rowData = [
+    statsRowObj.area,
+    statsRowObj.subarea,
+    statsRowObj.total_blocos,
+    statsRowObj.questoes,
+    statsRowObj.acertos,
+    statsRowObj.acerto_vida,
+    statsRowObj.acerto_28d,
+    statsRowObj.acerto_7d,
+    statsRowObj.tempo_medio,
+    statsRowObj.flags_28d,
+    statsRowObj.dif_media,
+    statsRowObj.ultimaData
+  ];
+
+  if (idx >= 0) {
+    updateSheetRow(SHEET_NAMES.STATS, idx, rowData);
+  } else if (statsSheet) {
+    writeSheetRow(SHEET_NAMES.STATS, rowData);
+  }
+
+  return statsRowObj;
+}
+
 function apiProcessLogInternal() {
+  let lock = null;
   try {
-    const lock = LockService.getScriptLock();
+    lock = LockService.getScriptLock();
     lock.tryLock(30000);
     
     const logData = readSheetData(SHEET_NAMES.LOG);
     const settings = apiGetSettings();
     
     if (logData.length === 0) {
-      lock.releaseLock();
       return { ok: true, message: 'Nenhum dado no LOG para processar' };
     }
     
@@ -778,7 +1648,9 @@ function apiProcessLogInternal() {
           dif_media,
           proximaRevisao,
           0, // lapses
-          0  // prioridade
+          0, // prioridade
+          false, // hidden
+          '' // hidden_since
         ];
         
         writeSheetRow(SHEET_NAMES.SPACED, newSpacedRow);
@@ -797,7 +1669,9 @@ function apiProcessLogInternal() {
             hoje,
             0.2,
             0,
-            1
+            1,
+            false,
+            ''
           ];
           writeSheetRow(SHEET_NAMES.MODEL, newModelRow);
         }
@@ -805,16 +1679,23 @@ function apiProcessLogInternal() {
     });
     
     SpreadsheetApp.flush();
-    lock.releaseLock();
-    
-    return { 
-      ok: true, 
+
+    return {
+      ok: true,
       alvosProcessados: Object.keys(statsMap).length,
       message: `${Object.keys(statsMap).length} alvos processados com sucesso`
     };
   } catch (e) {
-    Logger.log('Erro em apiProcessLog: ' + e.toString());
-    return { ok: false, error: e.toString() };
+    Logger.log('Erro em apiProcessLog: ' + errorToString(e));
+    return { ok: false, error: errorToString(e) };
+  } finally {
+    if (lock) {
+      try {
+        lock.releaseLock();
+      } catch (err) {
+        // ignore release errors
+      }
+    }
   }
 }
 
@@ -843,7 +1724,7 @@ function apiProcessAll() {
       message: `Processamento completo: ${processResult.alvosProcessados} alvos, ${reviewResult.count} revisões hoje`
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -880,7 +1761,7 @@ function apiProcessAll() {
     try {
       reviewResult = apiMakeReviewToday();
     } catch (e) {
-      Logger.log('Erro ao gerar fila: ' + e.toString());
+      Logger.log('Erro ao gerar fila: ' + errorToString(e));
       reviewResult = { ok: true, count: 0 }; // Continuar mesmo sem fila
     }
     
@@ -891,8 +1772,8 @@ function apiProcessAll() {
       message: `✓ ${processResult.alvosProcessados || 0} alvos processados, ${reviewResult.count || 0} revisões hoje`
     };
   } catch (e) {
-    Logger.log('Erro em apiProcessAll: ' + e.toString());
-    return { ok: false, error: e.toString() };
+    Logger.log('Erro em apiProcessAll: ' + errorToString(e));
+    return { ok: false, error: errorToString(e) };
   }
 }
 // ============================================================================
@@ -905,35 +1786,317 @@ function apiGetStats() {
     const stats = readSheetData(SHEET_NAMES.STATS);
     return { ok: true, data: stats };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
+
+function apiDashboardTotals() {
+  try {
+    const logData = readSheetData(SHEET_NAMES.LOG);
+    let totalQuestoes = 0;
+    let totalAcertos = 0;
+
+    (logData || []).forEach(row => {
+      if (!row) return;
+      const questoes = Math.max(0, safeNumber(row.total));
+      const acertos = Math.max(0, Math.min(safeNumber(row.acertos), questoes));
+      totalQuestoes += questoes;
+      totalAcertos += acertos;
+    });
+
+    return {
+      ok: true,
+      totalQuestoes,
+      totalAcertos
+    };
+  } catch (e) {
+    return { ok: false, error: errorToString(e), totalQuestoes: 0, totalAcertos: 0 };
+  }
+}
+
 
 function apiChartData() {
   try {
     const stats = readSheetData(SHEET_NAMES.STATS);
-    
-    // Agrupar por área
-    const areaMap = {};
+
+    // Agrupar por área e calcular o percentual total de acertos.
+    const areaTotals = {};
     stats.forEach(row => {
+      if (!row) return;
       const area = row.area || 'Sem área';
-      if (!areaMap[area]) {
-        areaMap[area] = { total: 0, acertos: 0 };
+      const questoes = parseFloat(row.questoes);
+      const acertos = parseFloat(row.acertos);
+      const safeQuestoes = isFinite(questoes) && questoes > 0 ? questoes : 0;
+      const safeAcertos = isFinite(acertos) && acertos > 0 ? Math.min(acertos, safeQuestoes || acertos) : 0;
+      if (!areaTotals[area]) {
+        areaTotals[area] = { acertos: 0, questoes: 0 };
       }
-      areaMap[area].total += parseFloat(row.questoes) || 0;
-      areaMap[area].acertos += parseFloat(row.acertos) || 0;
+      areaTotals[area].questoes += safeQuestoes;
+      areaTotals[area].acertos += safeAcertos;
     });
-    
+
     const chartData = [['Área', 'Acerto %']];
-    Object.keys(areaMap).forEach(area => {
-      const pct = areaMap[area].total > 0 ? (areaMap[area].acertos / areaMap[area].total) * 100 : 0;
+    Object.keys(areaTotals).forEach(area => {
+      const totals = areaTotals[area];
+      const pct = totals.questoes > 0 ? (totals.acertos / totals.questoes) * 100 : 0;
       chartData.push([area, pct]);
     });
-    
+
     return { ok: true, data: chartData };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
+}
+
+function apiDashboardAreas() {
+  try {
+    const hierarchy = buildAreaHierarchy();
+    return {
+      ok: true,
+      areas: hierarchy.areas,
+      map: hierarchy.map
+    };
+  } catch (e) {
+    return { ok: false, error: errorToString(e), areas: [], map: {} };
+  }
+}
+
+function apiChartBars(params) {
+  try {
+    const requestedArea = normalizeAreaFilter(params && params.area);
+    const hierarchy = buildAreaHierarchy();
+
+    // Agrupamento por área/subárea a partir do STATS (fallback LOG).
+    const aggregation = aggregateStatsForBars(requestedArea);
+    const hasData = aggregation.data.length > 0;
+
+    const response = {
+      ok: true,
+      label: requestedArea === 'ALL'
+        ? 'Acertos por Área'
+        : `Acertos por Subárea (${requestedArea})`,
+      data: aggregation.data,
+      metric: 'taxa'
+    };
+
+    if (!hasData && requestedArea !== 'ALL' && hierarchy.areas.indexOf(requestedArea) === -1) {
+      // Se a área solicitada não existir, devolve estrutura vazia mas consistente.
+      response.label = 'Acertos por Subárea';
+    }
+
+    return response;
+  } catch (e) {
+    return { ok: false, error: errorToString(e), label: 'Acertos por Área', data: [], metric: 'taxa' };
+  }
+}
+
+function apiChartLine(params) {
+  try {
+    const requestedArea = normalizeAreaFilter(params && params.area);
+    const windowDays = Math.max(1, safeNumber(params && params.windowDays) || 28);
+    const aggMode = (params && typeof params.agg === 'string') ? params.agg.toLowerCase() : 'daily';
+    const aggregationMode = aggMode === 'weekly' ? 'weekly' : 'daily';
+
+    const series = aggregateLogForLineChart(requestedArea, windowDays, aggregationMode);
+
+    return {
+      ok: true,
+      label: requestedArea === 'ALL'
+        ? `Progressão por Área (${windowDays}d)`
+        : `Progressão por Subárea (${requestedArea}, ${windowDays}d)`,
+      series: series
+    };
+  } catch (e) {
+    return { ok: false, error: errorToString(e), label: 'Progressão Temporal', series: [] };
+  }
+}
+
+function buildAreaHierarchy() {
+  const areaSet = new Set();
+  const areaToSub = {};
+
+  const stats = readSheetData(SHEET_NAMES.STATS) || [];
+  stats.forEach(row => {
+    if (!row) return;
+    const area = sanitizeArea(row.area);
+    const sub = sanitizeSubarea(row.subarea);
+    if (!area) return;
+    areaSet.add(area);
+    if (sub) {
+      if (!areaToSub[area]) areaToSub[area] = new Set();
+      areaToSub[area].add(sub);
+    }
+  });
+
+  if (areaSet.size === 0) {
+    const logs = readSheetData(SHEET_NAMES.LOG) || [];
+    logs.forEach(row => {
+      if (!row) return;
+      const area = sanitizeArea(row.area);
+      const sub = sanitizeSubarea(row.subarea);
+      if (!area) return;
+      areaSet.add(area);
+      if (sub) {
+        if (!areaToSub[area]) areaToSub[area] = new Set();
+        areaToSub[area].add(sub);
+      }
+    });
+  }
+
+  const areas = Array.from(areaSet).sort();
+  const map = {};
+  areas.forEach(area => {
+    if (areaToSub[area] && areaToSub[area].size > 0) {
+      map[area] = Array.from(areaToSub[area]).sort();
+    } else {
+      map[area] = [];
+    }
+  });
+
+  return { areas, map };
+}
+
+function aggregateStatsForBars(requestedArea) {
+  const stats = readSheetData(SHEET_NAMES.STATS) || [];
+  const grouped = {};
+
+  // Agrupamento principal por área/subárea utilizando STATS como fonte primária.
+  stats.forEach(row => {
+    if (!row) return;
+    const area = sanitizeArea(row.area) || 'Sem área';
+    const sub = sanitizeSubarea(row.subarea) || 'Sem subárea';
+    const targetLabel = requestedArea === 'ALL' ? area : (area === requestedArea ? sub : null);
+    if (!targetLabel) return;
+    if (!grouped[targetLabel]) grouped[targetLabel] = { acertos: 0, questoes: 0 };
+    const questoes = Math.max(0, safeNumber(row.questoes));
+    const acertos = Math.max(0, Math.min(safeNumber(row.acertos), questoes));
+    grouped[targetLabel].questoes += questoes;
+    grouped[targetLabel].acertos += acertos;
+  });
+
+  if (Object.keys(grouped).length === 0) {
+    const logs = readSheetData(SHEET_NAMES.LOG) || [];
+    // Fallback: agrupa LOG quando STATS está vazio.
+    logs.forEach(row => {
+      if (!row) return;
+      const area = sanitizeArea(row.area) || 'Sem área';
+      const sub = sanitizeSubarea(row.subarea) || 'Sem subárea';
+      const targetLabel = requestedArea === 'ALL' ? area : (area === requestedArea ? sub : null);
+      if (!targetLabel) return;
+      if (!grouped[targetLabel]) grouped[targetLabel] = { acertos: 0, questoes: 0 };
+      const questoes = Math.max(0, safeNumber(row.total));
+      const acertos = Math.max(0, Math.min(safeNumber(row.acertos), questoes));
+      grouped[targetLabel].questoes += questoes;
+      grouped[targetLabel].acertos += acertos;
+    });
+  }
+
+  const data = Object.keys(grouped)
+    .sort()
+    .map(label => {
+      const bucket = grouped[label];
+      const questoes = bucket.questoes;
+      const acertos = Math.min(bucket.acertos, questoes > 0 ? questoes : bucket.acertos);
+      const taxa = questoes > 0 ? acertos / questoes : 0;
+      return {
+        label,
+        acertos,
+        questoes,
+        taxa
+      };
+    });
+
+  return { data };
+}
+
+function aggregateLogForLineChart(requestedArea, windowDays, aggregationMode) {
+  const logs = readSheetData(SHEET_NAMES.LOG) || [];
+  if (!logs.length) {
+    // Tratamento para “sem dados”: retorna array vazio sem lançar erro.
+    return [];
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today.getTime());
+  start.setDate(start.getDate() - (windowDays - 1));
+
+  const seriesBuckets = {};
+
+  // Agrupamento temporal do LOG por dia/semana com filtro de área/subárea.
+  logs.forEach(row => {
+    if (!row) return;
+    const area = sanitizeArea(row.area);
+    if (!area) return;
+    if (requestedArea !== 'ALL' && area !== requestedArea) return;
+
+    const sub = sanitizeSubarea(row.subarea) || 'Sem subárea';
+    const totalQuestoes = Math.max(0, safeNumber(row.total));
+    const totalAcertos = Math.max(0, Math.min(safeNumber(row.acertos), totalQuestoes));
+    if (totalQuestoes === 0 && totalAcertos === 0) return;
+
+    const parsedDate = parseSheetDate(row.data);
+    if (!parsedDate) return;
+    parsedDate.setHours(0, 0, 0, 0);
+    if (parsedDate < start || parsedDate > today) return;
+
+    const bucketDate = aggregationMode === 'weekly' ? getIsoWeekStart(parsedDate) : new Date(parsedDate.getTime());
+    const bucketKey = formatDateISO(bucketDate);
+    const seriesName = requestedArea === 'ALL' ? (area || 'Sem área') : sub;
+
+    if (!seriesBuckets[seriesName]) seriesBuckets[seriesName] = {};
+    if (!seriesBuckets[seriesName][bucketKey]) {
+      seriesBuckets[seriesName][bucketKey] = { acertos: 0, questoes: 0 };
+    }
+
+    seriesBuckets[seriesName][bucketKey].questoes += totalQuestoes;
+    seriesBuckets[seriesName][bucketKey].acertos += totalAcertos;
+  });
+
+  return Object.keys(seriesBuckets)
+    .sort()
+    .map(name => {
+      const buckets = seriesBuckets[name];
+      const points = Object.keys(buckets)
+        .sort()
+        .map(dateKey => {
+          const bucket = buckets[dateKey];
+          const taxa = bucket.questoes > 0 ? bucket.acertos / bucket.questoes : 0;
+          return { date: dateKey, taxa };
+        });
+      return { name, points };
+    })
+    .filter(series => series.points.length > 0);
+}
+
+function sanitizeArea(area) {
+  return area ? String(area).trim() : '';
+}
+
+function sanitizeSubarea(subarea) {
+  return subarea ? String(subarea).trim() : '';
+}
+
+function normalizeAreaFilter(area) {
+  const normalized = sanitizeArea(area);
+  if (!normalized || normalized.toUpperCase() === 'ALL') {
+    return 'ALL';
+  }
+  return normalized;
+}
+
+function safeNumber(value) {
+  const num = Number(value);
+  return isFinite(num) ? num : 0;
+}
+
+function getIsoWeekStart(date) {
+  const monday = new Date(date.getTime());
+  const day = monday.getDay();
+  const diff = day === 0 ? -6 : (1 - day);
+  monday.setDate(monday.getDate() + diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
 }
 
 // ============================================================================
@@ -991,7 +2154,13 @@ function clamp(value, min, max) {
 }
 
 function asBoolean(value) {
-  return value === true || value === 'true' || value === 1 || value === '1';
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0) return false;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'sim';
+  }
+  return false;
 }
 
 function parseAlvoParts(alvo) {
@@ -1000,6 +2169,119 @@ function parseAlvoParts(alvo) {
     area: (parts[0] || '').trim(),
     subarea: (parts[1] || '').trim()
   };
+}
+
+function resolveHiddenState(spacedRow, modelRow) {
+  let hidden = false;
+  let hiddenSince = '';
+
+  if (spacedRow && spacedRow.hidden !== undefined) {
+    hidden = hidden || asBoolean(spacedRow.hidden);
+    if (!hiddenSince && spacedRow.hidden_since) {
+      hiddenSince = spacedRow.hidden_since;
+    }
+  }
+  if (modelRow && modelRow.hidden !== undefined) {
+    hidden = hidden || asBoolean(modelRow.hidden);
+    if (!hiddenSince && modelRow.hidden_since) {
+      hiddenSince = modelRow.hidden_since;
+    }
+  }
+
+  if (hiddenSince) {
+    const parsed = parseSheetDate(hiddenSince) || parseIsoDateToLocal(hiddenSince);
+    hiddenSince = parsed ? formatDateISO(parsed) : `${hiddenSince}`;
+  }
+
+  if (!hidden) {
+    hiddenSince = '';
+  }
+
+  return { hidden, hiddenSince };
+}
+
+function isTargetHidden(spacedRow, modelRow) {
+  return resolveHiddenState(spacedRow, modelRow).hidden;
+}
+
+function normalizeTargetList(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const result = [];
+  list.forEach(item => {
+    if (item === null || item === undefined) return;
+    const value = `${item}`.trim();
+    if (!value) return;
+    if (!seen.has(value)) {
+      seen.add(value);
+      result.push(value);
+    }
+  });
+  return result;
+}
+
+function getTodayISO() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return formatDateISO(today);
+}
+
+function updateHiddenStateForSheet(sheetName, headerKey, targetStates, dataRows) {
+  const headers = HEADERS[headerKey];
+  if (!headers) return [];
+  const hiddenIdx = headers.indexOf('hidden');
+  const sinceIdx = headers.indexOf('hidden_since');
+  if (hiddenIdx < 0 && sinceIdx < 0) {
+    return [];
+  }
+
+  const sheet = getOrCreateSheet(sheetName, headers);
+  const data = Array.isArray(dataRows) ? dataRows : readSheetData(sheetName);
+  if (!Array.isArray(data) || data.length === 0) {
+    return [];
+  }
+
+  const hiddenValues = hiddenIdx >= 0
+    ? data.map(row => [asBoolean(row && row.hidden)])
+    : [];
+  const sinceValues = sinceIdx >= 0
+    ? data.map(row => {
+        const current = row && row.hidden_since ? row.hidden_since : '';
+        if (!current) return [''];
+        const parsed = parseSheetDate(current) || parseIsoDateToLocal(current);
+        return [parsed ? formatDateISO(parsed) : `${current}`];
+      })
+    : [];
+
+  const touched = [];
+
+  data.forEach((row, idx) => {
+    if (!row || !row.alvo) return;
+    const alvo = `${row.alvo}`.trim();
+    if (!alvo) return;
+    const state = targetStates[alvo];
+    if (!state) return;
+    touched.push(alvo);
+    if (hiddenIdx >= 0) {
+      hiddenValues[idx][0] = !!state.hidden;
+    }
+    if (sinceIdx >= 0) {
+      sinceValues[idx][0] = state.hidden ? state.hiddenSince : '';
+    }
+  });
+
+  if (touched.length === 0) {
+    return [];
+  }
+
+  if (hiddenIdx >= 0) {
+    sheet.getRange(2, hiddenIdx + 1, hiddenValues.length, 1).setValues(hiddenValues);
+  }
+  if (sinceIdx >= 0) {
+    sheet.getRange(2, sinceIdx + 1, sinceValues.length, 1).setValues(sinceValues);
+  }
+
+  return touched;
 }
 
 function identityMatrix(size, scale) {
@@ -1659,6 +2941,7 @@ function gatherReviewCandidates(settings, referenceDate) {
   });
 
   const reviewList = [];
+  const upcomingList = [];
   const priorityUpdates = [];
   const priorityByAlvo = {};
 
@@ -1669,10 +2952,17 @@ function gatherReviewCandidates(settings, referenceDate) {
     }
 
     const statsRow = statsMap[item.alvo];
+    const modelRow = modelMap[item.alvo] || null;
+    const hiddenInfo = resolveHiddenState(item, modelRow);
+    if (hiddenInfo.hidden) {
+      priorityUpdates[idx] = { index: idx, alvo: item.alvo, value: 0 };
+      return;
+    }
+
     const alvoParts = parseAlvoParts(item.alvo || '');
     const areaKeyRaw = (alvoParts.area || '').toString().trim() || 'Sem área';
     const extras = {
-      modelRow: modelMap[item.alvo] || null,
+      modelRow,
       horizonDays,
       residualValue: residualMap.hasOwnProperty(item.alvo) ? residualMap[item.alvo] : null,
       surpriseLambda: settings.lambdaSurprise,
@@ -1692,35 +2982,43 @@ function gatherReviewCandidates(settings, referenceDate) {
     }
 
     proxima.setHours(0, 0, 0, 0);
+    const diasAte = Math.floor((proxima.getTime() - hoje.getTime()) / (24 * 60 * 60 * 1000));
+    const dentroDoHorizon = isFinite(diasAte) && diasAte <= horizonDays && diasAte >= 0;
     const areaKey = priorityInfo.context && priorityInfo.context.area
       ? priorityInfo.context.area
       : areaKeyRaw;
+    const entry = {
+      alvo: item.alvo,
+      prioridade: prioridade,
+      prioridadeBase: prioridade,
+      proximaRevisao: proxima,
+      estabilidade: parseFloat(item.estabilidade) || settings.Smin,
+      components: priorityInfo.components || {},
+      context: priorityInfo.context || null,
+      feito: feitoMap[item.alvo] || '',
+      modelRow: extras.modelRow || null,
+      areaKey,
+      diasAte: isFinite(diasAte) ? diasAte : null
+    };
+
     if (proxima <= hoje) {
-      reviewList.push({
-        alvo: item.alvo,
-        prioridade: prioridade,
-        prioridadeBase: prioridade,
-        proximaRevisao: proxima,
-        estabilidade: parseFloat(item.estabilidade) || settings.Smin,
-        components: priorityInfo.components || {},
-        context: priorityInfo.context || null,
-        feito: feitoMap[item.alvo] || '',
-        modelRow: extras.modelRow || null,
-        areaKey
-      });
+      reviewList.push(entry);
+    } else if (dentroDoHorizon) {
+      upcomingList.push(entry);
     }
   });
 
-  if (useAdvanced && asBoolean(settings.useDiversityReg) && reviewList.length > 0) {
+  const diversityTargets = reviewList.concat(upcomingList);
+  if (useAdvanced && asBoolean(settings.useDiversityReg) && diversityTargets.length > 0) {
     const lambdaDiv = parseFloat(settings.lambdaDiversity);
     const diversityWeight = isFinite(lambdaDiv) ? lambdaDiv : DEFAULT_SETTINGS.lambdaDiversity;
     if (diversityWeight !== 0) {
       const areaCounts = {};
-      reviewList.forEach(item => {
+      diversityTargets.forEach(item => {
         const key = item.areaKey || 'Sem área';
         areaCounts[key] = (areaCounts[key] || 0) + 1;
       });
-      const totalItems = reviewList.length;
+      const totalItems = diversityTargets.length;
       const coverageReal = {};
       Object.keys(areaCounts).forEach(area => {
         coverageReal[area] = areaCounts[area] / totalItems;
@@ -1737,7 +3035,7 @@ function gatherReviewCandidates(settings, referenceDate) {
         }
       });
 
-      const uniqueAreas = Array.from(new Set(reviewList.map(item => item.areaKey || 'Sem área')));
+      const uniqueAreas = Array.from(new Set(diversityTargets.map(item => item.areaKey || 'Sem área')));
       const targetShares = {};
       if (totalPeso > 0) {
         Object.keys(targetsRaw).forEach(area => {
@@ -1757,7 +3055,7 @@ function gatherReviewCandidates(settings, referenceDate) {
         });
       }
 
-      reviewList.forEach(item => {
+      diversityTargets.forEach(item => {
         const area = item.areaKey || 'Sem área';
         const target = targetShares.hasOwnProperty(area)
           ? targetShares[area]
@@ -1782,12 +3080,19 @@ function gatherReviewCandidates(settings, referenceDate) {
   }
 
   reviewList.sort((a, b) => (b.prioridade || 0) - (a.prioridade || 0));
+  upcomingList.sort((a, b) => {
+    const dueA = a.proximaRevisao instanceof Date ? a.proximaRevisao.getTime() : Number.MAX_SAFE_INTEGER;
+    const dueB = b.proximaRevisao instanceof Date ? b.proximaRevisao.getTime() : Number.MAX_SAFE_INTEGER;
+    if (dueA !== dueB) return dueA - dueB;
+    return (b.prioridade || 0) - (a.prioridade || 0);
+  });
 
   return {
     spacedSheet,
     reviewSheet,
     spacedData,
     reviewList,
+    upcomingList,
     priorityUpdates,
     priorityByAlvo,
     feitoMap,
@@ -1860,180 +3165,324 @@ function runBanditPlanner(reviewList, settings, customBudgetMinutes) {
   return { selected, metrics, budget, totalCost };
 }
 
-function apiMakeReviewToday() {
+function apiMakeReviewToday(payload) {
   try {
-    const settings = apiGetSettings();
+    const settings = apiGetSettings() || DEFAULT_SETTINGS;
+    const policyVersion = asBoolean(settings.useAdvancedPriority) ? 'advanced_v1' : 'classic_v1';
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const spacedSheet = ss.getSheetByName(SHEET_NAMES.SPACED);
+    const reviewSheet = getOrCreateSheet(SHEET_NAMES.REVER_HOJE, HEADERS.REVER_HOJE);
+
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
+    const hojeISO = formatDateISO(hoje);
+    const restSet = getRestDaySet();
 
-    const gather = gatherReviewCandidates(settings, hoje);
-    const spacedSheet = gather.spacedSheet;
-    const reviewSheet = gather.reviewSheet;
+    if (restSet.has(hojeISO)) {
+      clearSheetData(SHEET_NAMES.REVER_HOJE);
+      return { ok: true, date: hojeISO, count: 0, items: [], data: [], restDay: true };
+    }
 
     if (!spacedSheet) {
       clearSheetData(SHEET_NAMES.REVER_HOJE);
-      return { ok: true, count: 0, data: [] };
+      return { ok: true, date: hojeISO, count: 0, items: [], data: [] };
     }
 
-    const reviewList = gather.reviewList;
-    const priorityUpdates = gather.priorityUpdates;
-    const priorityByAlvo = gather.priorityByAlvo;
-    const spacedData = gather.spacedData;
-    const priorityCol = gather.priorityCol;
-    const useAdvanced = gather.useAdvanced;
+    const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const statsData = readSheetData(SHEET_NAMES.STATS);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const reviewHojeData = readSheetData(SHEET_NAMES.REVER_HOJE);
 
-    if (spacedData.length > 0 && priorityCol > 0 && priorityUpdates.length === spacedData.length) {
-      const values = spacedData.map((row, idx) => {
-        const alvo = row.alvo;
-        const update = priorityUpdates[idx];
-        const fallback = update ? update.value : 0;
-        const val = alvo && priorityByAlvo[alvo] !== undefined ? priorityByAlvo[alvo] : fallback;
-        return [val];
-      });
-      spacedSheet.getRange(2, priorityCol, values.length, 1).setValues(values);
-    }
-
-    let finalList = reviewList.slice();
-    let policyEntries = [];
-    const policyVersion = useAdvanced ? 'advanced_v1' : 'classic_v1';
-    let banditResult = null;
-
-    if (useAdvanced && asBoolean(settings.useBanditPlanner) && reviewList.length > 0) {
-      banditResult = runBanditPlanner(reviewList, settings);
-      const selectedSet = new Set((banditResult.selected || []).map(item => item.alvo));
-      const metrics = banditResult.metrics || {};
-      finalList = banditResult.selected;
-
-      const allDecisions = reviewList.map(item => {
-        const metric = metrics[item.alvo] || {};
-        const components = item.components || {};
-        components.banditRatio = metric.ratio;
-        components.banditCost = metric.cost;
-        components.banditValue = metric.totalValue;
-        item.components = components;
-        return {
-          item,
-          decisao: selectedSet.has(item.alvo) ? 'selected' : 'skipped',
-          metric
-        };
-      });
-
-      policyEntries = allDecisions.map(decision => {
-        const item = decision.item;
-        const areaParts = item.context && item.context.area ? {
-          area: item.context.area,
-          subarea: item.context.subarea
-        } : parseAlvoParts(item.alvo);
-        const components = item.components || {};
-        return {
-          timestamp: new Date(),
-          alvo: item.alvo,
-          area: areaParts.area,
-          subarea: areaParts.subarea,
-          pri: item.prioridade,
-          eviPerMin: components.eviPerMin !== undefined ? components.eviPerMin : '',
-          overdue: components.overdue !== undefined ? components.overdue : '',
-          diversity: components.diversity !== undefined ? components.diversity : '',
-          custos: components.custos !== undefined ? components.custos : '',
-          tempoPrev: components.tempoPrev !== undefined ? components.tempoPrev : (item.context ? item.context.tempoPrevSeg : ''),
-          decisao: decision.decisao,
-          policyVersion: policyVersion
-        };
-      });
-    } else if (finalList.length > 0) {
-      policyEntries = finalList.map(item => {
-        const areaParts = item.context && item.context.area ? {
-          area: item.context.area,
-          subarea: item.context.subarea
-        } : parseAlvoParts(item.alvo);
-        const components = item.components || {};
-        return {
-          timestamp: new Date(),
-          alvo: item.alvo,
-          area: areaParts.area,
-          subarea: areaParts.subarea,
-          pri: item.prioridade,
-          eviPerMin: components.eviPerMin !== undefined ? components.eviPerMin : '',
-          overdue: components.overdue !== undefined ? components.overdue : '',
-          diversity: components.diversity !== undefined ? components.diversity : '',
-          custos: components.custos !== undefined ? components.custos : '',
-          tempoPrev: components.tempoPrev !== undefined ? components.tempoPrev : (item.context ? item.context.tempoPrevSeg : ''),
-          decisao: 'selected',
-          policyVersion: policyVersion
-        };
-      });
-    }
-
-    clearSheetData(SHEET_NAMES.REVER_HOJE);
-    const rowsToWrite = finalList.map(item => [
-      item.alvo,
-      item.prioridade,
-      item.proximaRevisao,
-      item.estabilidade,
-      item.feito || ''
-    ]);
-    if (rowsToWrite.length > 0) {
-      const startRow = reviewSheet.getLastRow() + 1;
-      reviewSheet.getRange(startRow, 1, rowsToWrite.length, HEADERS.REVER_HOJE.length).setValues(rowsToWrite);
-      reviewSheet.getRange(startRow, 3, rowsToWrite.length, 1).setNumberFormat('dd/mm/yyyy');
-    }
-
-    SpreadsheetApp.flush();
-
-    if (policyEntries.length > 0) {
-      appendPolicyLogEntries(policyEntries);
-    }
-
-    const responseList = finalList.map(item => {
-      const components = item.components || {};
-      const diag = item.modelRow ? {
-        sigma: item.modelRow.sigma,
-        n_eff: item.modelRow.n_eff
-      } : null;
-      const context = item.context || null;
-      const alvoParts = context && (context.area || context.subarea)
-        ? { area: context.area, subarea: context.subarea }
-        : parseAlvoParts(item.alvo || '');
-      const tempoPrevSeg = context && context.tempoPrevSeg !== undefined
-        ? context.tempoPrevSeg
-        : (components.costMinutes !== undefined && components.costMinutes !== null
-          ? components.costMinutes * 60
-          : null);
-      const tempoPrevMin = tempoPrevSeg !== null && tempoPrevSeg !== undefined
-        ? tempoPrevSeg / 60
-        : (components.costMinutes !== undefined ? components.costMinutes : null);
-      return {
-        alvo: item.alvo,
-        prioridade: item.prioridade,
-        proximaRevisao: formatDateDDMMYYYY(item.proximaRevisao),
-        estabilidade: item.estabilidade,
-        feito: item.feito || '',
-        eviPerMin: components.eviPerMin !== undefined ? components.eviPerMin : null,
-        eviPerMinMean: components.eviPerMinMean !== undefined ? components.eviPerMinMean : null,
-        eviTotal: components.eviTotalLCB !== undefined ? components.eviTotalLCB : null,
-        custos: components.custos !== undefined ? components.custos : null,
-        overdue: components.overdue !== undefined ? components.overdue : null,
-        diversity: components.diversity !== undefined ? components.diversity : null,
-        costMinutes: components.costMinutes !== undefined ? components.costMinutes : null,
-        diagnostics: diag,
-        atrasoDias: context && context.atrasoDias !== undefined ? context.atrasoDias : null,
-        tempoPrevMin: tempoPrevMin,
-        baseRecall: context && context.baseRecall !== undefined ? context.baseRecall : null,
-        area: alvoParts.area || '',
-        subarea: alvoParts.subarea || ''
-      };
+    const statsMap = {};
+    statsData.forEach(row => {
+      if (!row || !row.area) return;
+      const key = `${row.area}::${row.subarea}`;
+      statsMap[key] = row;
     });
+
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (!row || !row.alvo) return;
+      modelMap[row.alvo] = row;
+    });
+
+    const feitoAnterior = {};
+    const questoesSugeridasAnterior = {};
+    reviewHojeData.forEach(row => {
+      if (!row || !row.alvo) return;
+      const raw = row.feito;
+      if (raw !== undefined && raw !== null && `${raw}`.toString().trim() !== '' && `${raw}` !== '0') {
+        feitoAnterior[row.alvo] = raw;
+      }
+      const sugestao = Number(row.questoesSugeridas);
+      if (isFinite(sugestao) && sugestao >= 0) {
+        questoesSugeridasAnterior[row.alvo] = Math.round(sugestao);
+      }
+    });
+
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const alpha = toFiniteOrNull(settings.alpha, DEFAULT_SETTINGS.alpha) || DEFAULT_SETTINGS.alpha;
+    const overdueMode = settings.overdueMode || DEFAULT_SETTINGS.overdueMode || 'linear';
+    const wPeg = toFiniteOrNull(settings.wPeg, DEFAULT_SETTINGS.wPeg) || DEFAULT_SETTINGS.wPeg;
+    const wTempo = toFiniteOrNull(settings.wTempo, DEFAULT_SETTINGS.wTempo) || DEFAULT_SETTINGS.wTempo;
+    const wDif = toFiniteOrNull(settings.wDif, DEFAULT_SETTINGS.wDif) || DEFAULT_SETTINGS.wDif;
+
+    const Smin = toFiniteOrNull(settings.Smin, DEFAULT_SETTINGS.Smin) || DEFAULT_SETTINGS.Smin;
+    const Smax = toFiniteOrNull(settings.Smax, DEFAULT_SETTINGS.Smax) || DEFAULT_SETTINGS.Smax;
+    const Imin = toFiniteOrNull(settings.Imin, DEFAULT_SETTINGS.Imin) || DEFAULT_SETTINGS.Imin;
+    const Imax = toFiniteOrNull(settings.Imax, DEFAULT_SETTINGS.Imax) || DEFAULT_SETTINGS.Imax;
+
+    const payloadQuestions = payload && payload.dailyQuestions !== undefined ? Number(payload.dailyQuestions) : NaN;
+    const settingsQuestions = Number(settings.reviewDailyQuestions);
+    const dailyQuestions = Math.max(1, Math.round(
+      isFinite(payloadQuestions) && payloadQuestions > 0
+        ? payloadQuestions
+        : (isFinite(settingsQuestions) && settingsQuestions > 0 ? settingsQuestions : DEFAULT_SETTINGS.reviewDailyQuestions)
+    ));
+
+    const priorityValues = [];
+    const dueItems = [];
+
+    spacedData.forEach(row => {
+      if (!row || !row.alvo) {
+        priorityValues.push([0]);
+        return;
+      }
+
+      const alvo = row.alvo.toString().trim();
+      if (!alvo) {
+        priorityValues.push([0]);
+        return;
+      }
+
+      const modelRow = modelMap[alvo];
+      const hiddenInfo = resolveHiddenState(row, modelRow);
+      if (hiddenInfo.hidden) {
+        priorityValues.push([0]);
+        return;
+      }
+
+      const parts = parseAlvoParts(alvo);
+      const statsRow = statsMap[alvo];
+
+      let S = toFiniteOrNull(row.estabilidade, null);
+      if (!isFinite(S) || S === null || S <= 0) {
+        const modelS = modelRow ? toFiniteOrNull(modelRow.S_atual, null) : null;
+        if (isFinite(modelS) && modelS !== null && modelS > 0) {
+          S = modelS;
+        } else {
+          S = Smin;
+        }
+      }
+      S = clamp(S, Smin, Smax);
+
+      const proximaDate = parseSheetDate(row.proximaRevisao);
+      const ultimaDate = parseSheetDate(row.ultimaRevisao);
+
+      let diasDesdeUltima = 0;
+      if (ultimaDate instanceof Date && !isNaN(ultimaDate)) {
+        diasDesdeUltima = Math.max(0, Math.round((hoje.getTime() - ultimaDate.getTime()) / msPerDay));
+      } else if (proximaDate instanceof Date && !isNaN(proximaDate)) {
+        const diff = Math.round((hoje.getTime() - proximaDate.getTime()) / msPerDay);
+        diasDesdeUltima = Math.max(0, diff + Math.round(S));
+      } else {
+        diasDesdeUltima = Math.round(S);
+      }
+
+      let atrasoDias = 0;
+      let proximaRef = null;
+      if (proximaDate instanceof Date && !isNaN(proximaDate)) {
+        proximaDate.setHours(0, 0, 0, 0);
+        proximaRef = proximaDate;
+        if (proximaDate.getTime() <= hoje.getTime()) {
+          atrasoDias = Math.max(0, Math.round((hoje.getTime() - proximaDate.getTime()) / msPerDay));
+        }
+      }
+
+      const recallHoje = Math.exp(-diasDesdeUltima / Math.max(1, S));
+      const baseRecall = clamp(1 - recallHoje, 0, 1);
+
+      let tempoMedioSeg = statsRow ? toFiniteOrNull(statsRow.tempo_medio, null) : null;
+      if (!isFinite(tempoMedioSeg) || tempoMedioSeg === null || tempoMedioSeg <= 0) {
+        tempoMedioSeg = 60;
+      }
+      const tempoRel = clamp(tempoMedioSeg / 120, 0, 1);
+      const tempoEstMin = Math.max(0.5, tempoMedioSeg / 60);
+
+      let difNorm = 0;
+      if (statsRow && statsRow.dif_media !== undefined) {
+        const difMedia = toFiniteOrNull(statsRow.dif_media, null);
+        if (isFinite(difMedia) && difMedia !== null) {
+          difNorm = clamp((difMedia - 1) / 4, 0, 1);
+        }
+      } else if (row.dificuldade_media !== undefined) {
+        const difMedia = toFiniteOrNull(row.dificuldade_media, null);
+        if (isFinite(difMedia) && difMedia !== null) {
+          difNorm = clamp((difMedia - 1) / 4, 0, 1);
+        }
+      }
+
+      let peg = 0;
+      if (statsRow) {
+        const flags = toFiniteOrNull(statsRow.flags_28d, null);
+        if (isFinite(flags) && flags !== null) {
+          peg = clamp(flags / 10, 0, 1);
+        } else {
+          const acc28 = toFiniteOrNull(statsRow.acerto_28d, null);
+          const accVida = toFiniteOrNull(statsRow.acerto_vida, null);
+          const baseAcc = isFinite(acc28) && acc28 !== null ? acc28 : (isFinite(accVida) && accVida !== null ? accVida : 0.7);
+          peg = clamp(1 - baseAcc, 0, 1);
+        }
+      }
+
+      const custos = (wPeg * peg) + (wTempo * tempoRel) + (wDif * difNorm);
+      const overdueValor = calcOverdue(atrasoDias, Math.max(1, S), alpha, overdueMode);
+
+      const prioridade = isFinite(baseRecall + overdueValor + custos) ? (baseRecall + overdueValor + custos) : 0;
+      priorityValues.push([prioridade]);
+
+      const proximaEfetiva = proximaRef ? shiftDateForwardSkippingRest(proximaRef, restSet) : null;
+      if (proximaEfetiva && proximaEfetiva.getTime() <= hoje.getTime()) {
+        dueItems.push({
+          alvo,
+          area: parts.area || '',
+          subarea: parts.subarea || '',
+          prioridade,
+          prioridadeBase: prioridade,
+          S,
+          Rhoje: recallHoje,
+          overdue: overdueValor,
+          atrasoDias,
+          tempoEstMin,
+          tempoPrevMin: tempoEstMin,
+          tempo_rel: tempoRel,
+          peg,
+          dif_norm: difNorm,
+          baseRecall,
+          feito: feitoAnterior[alvo] || '',
+          proximaRevisaoStr: formatDateDDMMYYYY(proximaEfetiva),
+          proximaDate: proximaEfetiva,
+          caps: { Smin, Smax, Imin, Imax }
+        });
+      }
+    });
+
+    const priorityCol = HEADERS.SPACED.indexOf('prioridade') + 1;
+    if (priorityCol > 0 && priorityValues.length > 0) {
+      try {
+        spacedSheet.getRange(2, priorityCol, priorityValues.length, 1).setValues(priorityValues);
+      } catch (priorityErr) {
+        Logger.log('Falha ao escrever prioridades: ' + errorToString(priorityErr));
+      }
+    }
+
+    dueItems.sort((a, b) => (b.prioridade || 0) - (a.prioridade || 0));
+
+    // Persiste a distribuição já calculada em REVER_HOJE para não recalcular ao marcar um tema.
+    const pendingItems = dueItems.filter(item => !asBoolean(item.feito));
+    let remainingQuestions = dailyQuestions;
+    const pendingWithoutSaved = [];
+    pendingItems.forEach(item => {
+      const saved = questoesSugeridasAnterior[item.alvo];
+      if (isFinite(saved) && saved >= 0) {
+        item.questoesSugeridas = saved;
+        remainingQuestions -= saved;
+      } else {
+        pendingWithoutSaved.push(item);
+      }
+    });
+    remainingQuestions = Math.max(0, remainingQuestions);
+
+    // Distribui a meta diária restante de questões de forma ponderada pela prioridade dos temas ainda sem sugestão salva.
+    const totalPriority = pendingWithoutSaved.reduce((sum, item) => {
+      const pri = Number(item.prioridade);
+      return sum + (isFinite(pri) && pri > 0 ? pri : 0);
+    }, 0);
+    pendingWithoutSaved.forEach(item => {
+      const pri = Number(item.prioridade);
+      const weight = totalPriority > 0 ? ((isFinite(pri) && pri > 0 ? pri : 0) / totalPriority) : 0;
+      const rawQuestions = totalPriority > 0
+        ? (remainingQuestions * weight)
+        : (remainingQuestions / Math.max(1, pendingWithoutSaved.length));
+      const suggested = Math.max(0, Math.floor(rawQuestions));
+      item.questoesSugeridas = suggested;
+      item.__fraction = rawQuestions - suggested;
+    });
+    const allocatedNewQuestions = pendingWithoutSaved.reduce((sum, item) => sum + (item.questoesSugeridas || 0), 0);
+    let residualQuestions = Math.max(0, remainingQuestions - allocatedNewQuestions);
+    if (pendingWithoutSaved.length > 0 && residualQuestions > 0) {
+      pendingWithoutSaved
+        .slice()
+        .sort((a, b) => (b.__fraction || 0) - (a.__fraction || 0))
+        .forEach(item => {
+          if (residualQuestions <= 0) return;
+          item.questoesSugeridas = (item.questoesSugeridas || 0) + 1;
+          residualQuestions -= 1;
+        });
+    }
+    dueItems.forEach(item => {
+      if (item.questoesSugeridas === undefined) {
+        item.questoesSugeridas = questoesSugeridasAnterior[item.alvo] || 0;
+      }
+      delete item.__fraction;
+    });
+
+    // Reconstrói a aba REVER_HOJE a partir dos alvos vencidos em SPACED.
+    clearSheetData(SHEET_NAMES.REVER_HOJE);
+    if (dueItems.length > 0) {
+      const rows = dueItems.map(item => [
+        item.alvo,
+        item.prioridade,
+        item.proximaDate || hoje,
+        item.S,
+        item.feito ? item.feito : '',
+        item.questoesSugeridas || 0
+      ]);
+      try {
+        reviewSheet.getRange(2, 1, rows.length, HEADERS.REVER_HOJE.length).setValues(rows);
+        reviewSheet.getRange(2, 3, rows.length, 1).setNumberFormat('dd/mm/yyyy');
+      } catch (writeErr) {
+        Logger.log('Falha ao reescrever REVER_HOJE: ' + errorToString(writeErr));
+      }
+    }
+
+    const responseItems = dueItems.map(item => ({
+      // Fórmula base da prioridade: (1 − R(t)) + overdue + custos.
+      alvo: item.alvo,
+      area: item.area,
+      subarea: item.subarea,
+      prioridade: item.prioridade,
+      prioridadeBase: item.prioridadeBase,
+      S: item.S,
+      Rhoje: item.Rhoje,
+      overdue: item.overdue,
+      atrasoDias: item.atrasoDias,
+      tempoEstMin: item.tempoEstMin,
+      tempoPrevMin: item.tempoPrevMin,
+      tempo_rel: item.tempo_rel,
+      peg: item.peg,
+      dif_norm: item.dif_norm,
+      baseRecall: item.baseRecall,
+      caps: item.caps,
+      feito: item.feito,
+      proximaRevisao: item.proximaRevisaoStr,
+      questoesSugeridas: item.questoesSugeridas || 0
+    }));
 
     return {
       ok: true,
-      count: finalList.length,
-      data: responseList,
+      date: hojeISO,
+      count: responseItems.length,
+      items: responseItems,
+      data: responseItems,
       policyVersion,
-      bandit: banditResult ? { budget: banditResult.budget, totalCost: banditResult.totalCost } : null
+      budgetMin: 0,
+      bandit: null,
+      dailyQuestions
     };
 
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -2107,7 +3556,7 @@ function apiEffortPlanner(budgetMinutes) {
     };
 
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -2125,7 +3574,7 @@ function apiLogRetrospective(payload) {
     const totalMinutes = Number(params.totalMinutes) || 0;
     const totalGain = Number(params.totalGain) || 0;
     const executionPct = Number(params.executionPct) || 0;
-    const phrase = params.phrase ? params.phrase.toString() : '';
+    const phrase = params.phrase ? String(params.phrase) : '';
     const topAreas = Array.isArray(params.topAreas) ? params.topAreas : [];
 
     const obsParts = [];
@@ -2152,13 +3601,13 @@ function apiLogRetrospective(payload) {
 
     sheet.appendRow(row);
     SpreadsheetApp.flush();
-    if (lock) lock.releaseLock();
     return { ok: true };
   } catch (e) {
+    return { ok: false, error: errorToString(e) };
+  } finally {
     if (lock) {
       try { lock.releaseLock(); } catch (err) {}
     }
-    return { ok: false, error: e.toString() };
   }
 }
 
@@ -2696,7 +4145,7 @@ function apiPlanDayBudget(params) {
       areas
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -2803,7 +4252,7 @@ function apiCompareModes(params) {
       maintenance: sanitizeModeOutput(maintenancePlan, maintenanceDiag)
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -3226,7 +4675,7 @@ function apiStudyGuidePlanV2(params) {
     }
     return Object.assign({ ok: true }, plan);
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -3759,7 +5208,7 @@ function apiStudyGuidePlan(params) {
     }
     return Object.assign({ ok: true }, plan);
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -3820,7 +5269,7 @@ function apiStudyGuideCompareAlvos(params) {
       targets: limited
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -3850,7 +5299,9 @@ function apiWeeklyPlan(params) {
     hoje.setHours(0, 0, 0, 0);
 
     const gather = gatherReviewCandidates(planningSettings, hoje);
-    const reviewList = gather.reviewList || [];
+    const todayList = gather.reviewList || [];
+    const upcomingList = gather.upcomingList || [];
+    const reviewList = todayList.concat(upcomingList);
     const statsData = readSheetData(SHEET_NAMES.STATS);
     const statsMap = {};
     statsData.forEach(row => {
@@ -3894,11 +5345,23 @@ function apiWeeklyPlan(params) {
       const currentDate = new Date(hoje.getTime() + offset * msPerDay);
       const available = candidates.filter(item => !item._assigned && (item.dueDate === null || item.dueDate <= currentDate));
       let selection = available.slice();
-      if (selection.length === 0) {
-        const remaining = candidates.filter(item => !item._assigned);
-        selection = remaining.slice(0, maxTargets);
-      } else if (selection.length > maxTargets) {
+      if (selection.length > maxTargets) {
         selection = selection.slice(0, maxTargets);
+      }
+
+      if (selection.length === 0) {
+        // Mantém o planejamento sincronizado com o calendário: se não há itens vencidos
+        // ou agendados para este dia, registramos o dia vazio em vez de antecipar alvos futuros.
+        days.push({
+          dateISO: currentDate.toISOString(),
+          date: formatDateDDMMYYYY(currentDate),
+          allocatedMin: 0,
+          totalDeltaRpp: 0,
+          targets: [],
+          areas: [],
+          fallbackToPriority: false
+        });
+        continue;
       }
 
       const planInputs = selection.map(item => Object.assign({}, item));
@@ -3966,13 +5429,20 @@ function apiWeeklyPlan(params) {
       carryOver
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
 function debugSpaced() {
   try {
     const spaced = readSheetData(SHEET_NAMES.SPACED);
+    const modelRows = readSheetData(SHEET_NAMES.MODEL);
+    const modelMap = {};
+    modelRows.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
     Logger.log('Total de registros em SPACED: ' + spaced.length);
     
     if (spaced.length > 0) {
@@ -4001,8 +5471,8 @@ function debugSpaced() {
     
     return 'Ver logs';
   } catch (e) {
-    Logger.log('Erro: ' + e.toString());
-    return e.toString();
+    Logger.log('Erro: ' + errorToString(e));
+    return errorToString(e);
   }
 }
 
@@ -4147,15 +5617,109 @@ function apiGetDayDetails(dateISO) {
 
     return { ok: true, date: targetKeyDisplay, revisoes: formattedDetails };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
-function apiApplyReviewDone(alvos) {
+function setReviewHojeStatus(alvo, feito) {
+  if (!alvo) return false;
+  const sheet = getOrCreateSheet(SHEET_NAMES.REVER_HOJE, HEADERS.REVER_HOJE);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return false;
+
+  const alvoIdx = HEADERS.REVER_HOJE.indexOf('alvo');
+  const feitoIdx = HEADERS.REVER_HOJE.indexOf('feito');
+  if (alvoIdx < 0 || feitoIdx < 0) return false;
+
+  const range = sheet.getRange(2, 1, lastRow - 1, HEADERS.REVER_HOJE.length);
+  const values = range.getValues();
+  let updated = false;
+
+  for (let i = 0; i < values.length; i++) {
+    const rowAlvo = values[i][alvoIdx];
+    if (rowAlvo && rowAlvo.toString().trim() === alvo) {
+      // Marca ou desmarca o alvo como concluído diretamente em REVER_HOJE.
+      values[i][feitoIdx] = feito ? 'TRUE' : '';
+      updated = true;
+    }
+  }
+
+  if (updated) {
+    range.setValues(values);
+  }
+
+  return updated;
+}
+
+function apiApplyReviewDone(payload) {
   try {
-    return { ok: true };
+    // Endpoint de conclusão de revisão protegido por try/catch para evitar respostas indefinidas.
+    if (!payload || !payload.alvo) {
+      return { ok: false, error: 'Alvo obrigatório.' };
+    }
+
+    const alvo = payload.alvo.toString().trim();
+    if (!alvo) {
+      return { ok: false, error: 'Alvo inválido.' };
+    }
+
+    if (payload.undo === true) {
+      const undone = setReviewHojeStatus(alvo, false);
+      SpreadsheetApp.flush();
+      return { ok: true, alvo, undone: true, recomputeHint: true, updated: undone };
+    }
+
+    const total = Number(payload.total);
+    const acertos = Number(payload.acertos);
+    if (!isFinite(total) || total <= 0) {
+      return { ok: false, error: 'Total de questões inválido.' };
+    }
+    if (!isFinite(acertos) || acertos < 0 || acertos > total) {
+      return { ok: false, error: 'Quantidade de acertos inválida.' };
+    }
+
+    const tempoSegRaw = payload.tempoSeg !== undefined ? Number(payload.tempoSeg) : 0;
+    const tempoSeg = isFinite(tempoSegRaw) && tempoSegRaw >= 0 ? tempoSegRaw : 0;
+    let difPercebida = payload.difPercebida !== undefined ? Number(payload.difPercebida) : 3;
+    if (!isFinite(difPercebida)) difPercebida = 3;
+    difPercebida = clamp(Math.round(difPercebida), 1, 5);
+
+    let area = (payload.area || '').toString().trim();
+    let subarea = (payload.subarea || '').toString().trim();
+    if (!area || !subarea) {
+      const parts = parseAlvoParts(alvo);
+      if (!area) area = parts.area;
+      if (!subarea) subarea = parts.subarea;
+    }
+
+    const reviewPayload = {
+      alvo,
+      area,
+      subarea,
+      total,
+      acertos,
+      tempoSeg,
+      difPercebida,
+      flags: payload.flags || '',
+      obs: payload.obs || '',
+      metaOverride: payload.metaOverride,
+      p_prev: payload.p_prev,
+      tDias: payload.tDias
+    };
+
+    const logResult = apiLogReviewOutcome(reviewPayload);
+    if (!logResult || !logResult.ok) {
+      return {
+        ok: false,
+        error: logResult && logResult.error ? logResult.error : 'Erro ao registrar revisão.'
+      };
+    }
+
+    const marked = setReviewHojeStatus(alvo, true);
+    SpreadsheetApp.flush();
+    return { ok: true, alvo, recomputeHint: true, marked };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4167,36 +5731,52 @@ function apiGetReviewCalendar(days) {
   try {
     days = days || 7;
     const spaced = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
-    
+
     const calendar = {};
+    const restSet = getRestDaySet();
 
     for (let i = 0; i < days; i++) {
       const date = new Date(hoje);
       date.setDate(date.getDate() + i);
       const dateStr = formatDateDDMMYYYY(date);
-      calendar[dateStr] = 0;
+      calendar[dateStr] = { quantidade: 0, descanso: restSet.has(formatDateISO(date)), alvos: [] };
     }
 
     spaced.forEach(item => {
       const proxRevisao = parseSheetDate(item.proximaRevisao);
       if (!proxRevisao) return;
-      const dateStr = formatDateDDMMYYYY(proxRevisao);
+      // Evita contar alvos congelados no calendário de revisões
+      if (isTargetHidden(item, modelMap[item.alvo])) return;
+      const baseCalendarDate = proxRevisao.getTime() < hoje.getTime() ? hoje : proxRevisao;
+      const proxEfetiva = shiftDateForwardSkippingRest(baseCalendarDate, restSet);
+      if (!proxEfetiva) return;
+      const dateStr = formatDateDDMMYYYY(proxEfetiva);
 
-      if (calendar[dateStr] !== undefined) {
-        calendar[dateStr]++;
+      if (calendar[dateStr] !== undefined && !calendar[dateStr].descanso) {
+        calendar[dateStr].quantidade++;
+        calendar[dateStr].alvos.push(item.alvo || '');
       }
     });
     
     const result = Object.keys(calendar).map(date => ({
       data: date,
-      quantidade: calendar[date]
+      quantidade: calendar[date].quantidade,
+      descanso: calendar[date].descanso,
+      alvos: calendar[date].alvos
     }));
     
     return { ok: true, data: result };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4333,6 +5913,7 @@ function apiLogReviewOutcome(payload) {
     const modelSheet = getOrCreateSheet(SHEET_NAMES.MODEL, HEADERS.MODEL);
     const modelData = readSheetData(SHEET_NAMES.MODEL);
     let modelIdx = modelData.findIndex(row => row.alvo === alvo);
+    const existingModelRow = modelIdx >= 0 ? modelData[modelIdx] : null;
     let theta0;
     let theta1;
     let theta2;
@@ -4341,8 +5922,8 @@ function apiLogReviewOutcome(payload) {
     let nEffAtual = 0;
     let rlsState = null;
 
-    if (modelIdx >= 0) {
-      const modelRow = modelData[modelIdx];
+    if (existingModelRow) {
+      const modelRow = existingModelRow;
       theta0 = parseFloat(modelRow.theta0);
       theta1 = parseFloat(modelRow.theta1);
       theta2 = parseFloat(modelRow.theta2);
@@ -4366,8 +5947,9 @@ function apiLogReviewOutcome(payload) {
       }
     }
 
-    const statsData = readSheetData(SHEET_NAMES.STATS);
-    const statsRow = statsData.find(row => `${row.area}::${row.subarea}` === alvo);
+    // Atualiza STATS do alvo no mesmo fluxo da revisão para evitar defasagem no dashboard/priorização.
+    const statsRow = recomputeStatsForTarget(area, subarea, { today: hojeSemHora })
+      || readSheetData(SHEET_NAMES.STATS).find(row => `${row.area}::${row.subarea}` === alvo);
     let competencia = 0.5;
     if (statsRow) {
       const acc28 = parseFloat(statsRow.acerto_28d);
@@ -4417,7 +5999,9 @@ function apiLogReviewOutcome(payload) {
     if (!isFinite(I)) {
       I = settings.Imin;
     }
-    I = applyCapI(Math.round(I), settings.Imin, settings.Imax);
+    // Usa teto para evitar estagnar no mesmo intervalo por arredondamento para baixo.
+    // Ex.: 2.1 dia deve virar 3 (não 2) para permitir progressão do espaçamento.
+    I = applyCapI(Math.ceil(I), settings.Imin, settings.Imax);
 
     const proximaRevisao = new Date(hojeSemHora);
     proximaRevisao.setDate(proximaRevisao.getDate() + I);
@@ -4463,6 +6047,7 @@ function apiLogReviewOutcome(payload) {
     );
     const prioridade = prioridadeInfo.score;
 
+    const hiddenInfo = resolveHiddenState(spacedRow, existingModelRow);
     const spacedRowValues = [
       alvo,
       ultimaRevisaoValor,
@@ -4470,7 +6055,9 @@ function apiLogReviewOutcome(payload) {
       difMedia,
       proximaRevisao,
       lapsesAtual,
-      prioridade
+      prioridade,
+      hiddenInfo.hidden,
+      hiddenInfo.hiddenSince
     ];
 
     if (spacedIdx >= 0) {
@@ -4488,7 +6075,9 @@ function apiLogReviewOutcome(payload) {
       hoje,
       sigmaAtual,
       nEffAtual,
-      weibullKAfter
+      weibullKAfter,
+      hiddenInfo.hidden,
+      hiddenInfo.hiddenSince
     ];
 
     if (modelIdx >= 0) {
@@ -4514,7 +6103,7 @@ function apiLogReviewOutcome(payload) {
       updated: ['REVISAO_LOG', 'LOG', 'MODEL', 'SPACED', 'REVER_HOJE']
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   } finally {
     SpreadsheetApp.flush();
     lock.releaseLock();
@@ -4535,6 +6124,32 @@ function apiRecompute() {
     const revisaoLog = readSheetData(SHEET_NAMES.REVISAO_LOG);
     const statsData = readSheetData(SHEET_NAMES.STATS);
     const spacedData = readSheetData(SHEET_NAMES.SPACED);
+    const modelData = readSheetData(SHEET_NAMES.MODEL);
+
+    const spacedMap = {};
+    spacedData.forEach(row => {
+      if (row && row.alvo) {
+        spacedMap[row.alvo] = row;
+      }
+    });
+
+    const modelMap = {};
+    modelData.forEach(row => {
+      if (row && row.alvo) {
+        modelMap[row.alvo] = row;
+      }
+    });
+
+    const hiddenStateByTarget = {};
+    const hiddenTargets = new Set([
+      ...Object.keys(spacedMap),
+      ...Object.keys(modelMap)
+    ]);
+    hiddenTargets.forEach(alvo => {
+      const spacedRow = spacedMap[alvo] || null;
+      const modelRow = modelMap[alvo] || null;
+      hiddenStateByTarget[alvo] = resolveHiddenState(spacedRow, modelRow);
+    });
 
     const statsMap = {};
     statsData.forEach(row => {
@@ -4621,6 +6236,7 @@ function apiRecompute() {
       const sigma = Math.sqrt(Math.max(1e-6, state.sigma2));
       const alvoParts = parseAlvoParts(alvo);
       const weibullK = asBoolean(settings.useWeibull) ? getWeibullShape(alvoParts.area, settings) : 1;
+      const hiddenInfo = hiddenStateByTarget[alvo] || { hidden: false, hiddenSince: '' };
       return [
         alvo,
         state.theta[0],
@@ -4630,7 +6246,9 @@ function apiRecompute() {
         new Date(),
         sigma,
         state.nEff,
-        weibullK
+        weibullK,
+        hiddenInfo.hidden,
+        hiddenInfo.hiddenSince
       ];
     });
     if (modelRows.length > 0) {
@@ -4653,7 +6271,8 @@ function apiRecompute() {
       if (!isFinite(I)) {
         I = settings.Imin;
       }
-      I = applyCapI(Math.round(I), settings.Imin, settings.Imax);
+      // Mantém a mesma regra do fluxo online: arredondar para cima evita repetição de 2 dias.
+      I = applyCapI(Math.ceil(I), settings.Imin, settings.Imax);
 
       const ultimaRevisao = parseSheetDate(item.ultimaRevisao) || new Date();
       const proximaRevisao = new Date(ultimaRevisao.getTime());
@@ -4686,6 +6305,7 @@ function apiRecompute() {
         }
       );
 
+      const hiddenInfo = hiddenStateByTarget[alvo] || { hidden: false, hiddenSince: '' };
       const updatedRow = [
         alvo,
         ultimaRevisao,
@@ -4693,7 +6313,9 @@ function apiRecompute() {
         item.dificuldade_media,
         proximaRevisao,
         item.lapses,
-        prioridadeInfo.score
+        prioridadeInfo.score,
+        hiddenInfo.hidden,
+        hiddenInfo.hiddenSince
       ];
       updateSheetRow(SHEET_NAMES.SPACED, idx, updatedRow);
     });
@@ -4703,7 +6325,7 @@ function apiRecompute() {
 
     return { ok: true, modelsUpdated: Object.keys(models).length };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   } finally {
     if (lock) {
       try {
@@ -4775,7 +6397,7 @@ function apiFitDoseResponse(alvoOrAll) {
 
     return { ok: true, results };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4800,7 +6422,7 @@ function apiPredictGain(alvo, effortPlan) {
     const predicted = intercept + slope * effort;
     return { ok: true, alvo, effort, predictedGain: clamp(predicted, 0, 1), model: fit.result };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4875,7 +6497,7 @@ function apiEstimateAttribution(window) {
 
     return { ok: true, updated: rows.length };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4915,7 +6537,7 @@ function apiABAssign(uid) {
     const variant = hash % 2 === 0 ? 'classic' : 'evi';
     return { ok: true, uid, variant };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -4957,7 +6579,7 @@ function apiABLog(payload) {
 
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
 
@@ -5014,6 +6636,6 @@ function apiABReport() {
       }
     };
   } catch (e) {
-    return { ok: false, error: e.toString() };
+    return { ok: false, error: errorToString(e) };
   }
 }
